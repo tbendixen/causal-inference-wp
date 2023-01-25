@@ -6,7 +6,7 @@ Topics (to be) covered:
 
 - Potential outcomes
 - Causal diagrams (DAGs)
-- Randomization
+- Randomization vs. observational settings
 - Multiple regression and backdoor paths
 - 'Table 2 fallacy', frontdoor criterion, etc.
 - Conditional vs. marginal effects
