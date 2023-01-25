@@ -1,6 +1,6 @@
 # Causal inference in the social, health and business sciences
 
-A very brief practical primer on using R.
+A very brief practical primer on using `R` and `Stan`.
 
 Topics (to be) covered:
 
