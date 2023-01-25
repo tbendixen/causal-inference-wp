@@ -1,5 +1,6 @@
-# causal-inference-wp
-A very brief practical primer on causal inference in the social, health and business sciences using R.
+# Causal inference in the social, health and business sciences
+
+A very brief practical primer on using R.
 
 Topics (to be) covered:
 
