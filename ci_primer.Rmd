@@ -1,5 +1,5 @@
 ---
-title: '**Causal inference in the social and health sciences: A very brief practical primer in R**'
+title: '**Causal inference in the social, health and business sciences: A very brief practical primer in R**'
 author: "Theiss Bendixen"
 date: "`r Sys.Date()`"
 header-includes:
@@ -9,6 +9,7 @@ header-includes:
 output:
   pdf_document:
     number_sections: true
+bibliography: [wp-bib.bib]
 ---
 
 ```{r setup, include=FALSE}
@@ -19,10 +20,11 @@ knitr::opts_chunk$set(echo = TRUE,
                       message = FALSE,
                       error = TRUE,
                       cache.comments = FALSE)
+
 ```
 
 # Introduction
-Causal inference is about what works, when, for whom and under what circumstances. When an event occurs -- a medical treatment, social intervention, etc. -- we want to know what happened as a result, if anything. But -- and here's the crucial insight -- we also need to know what would have happened *in the absence of* the event, all else being equal. That is, the causal effect of an event is the difference between what actually happened and the potential but actually-not-occurring counter-factual.
+Causal inference is about what works, when, for whom and under what circumstances. When an event occurs -- a medical treatment, social intervention, marketing move, etc. -- we want to know what happened as a result, if anything. But -- and here's the crucial insight -- we also need to know what would have happened *in the absence of* the event, all else being equal. That is, the causal effect of an event is the difference between what actually happened and the potential but actually-not-occurring counter-factual.
 
 This working paper is a very brief practical primer on causal inference in the health and social sciences. We'll use minimal formal notation and instead emphasize practical computational implementation using the `R` scripting language. It assumes a basic understanding of Bayesian regression and generalized linear modeling in `R`. Most importantly, however, it assumes an interest in the question of how we can ever know whether something caused something else and to what extent.
 
@@ -86,13 +88,13 @@ This does not mean that all hope is lost. Causal inference in observational or p
 
 # Blocking backdoors
 
-This section riffs on -- and in a few ways goes slightly beyond -- see Cinelli's Crash Course and McElreath 2023 Rethinking lectures 5 and 6.
+This section riffs on -- and in a few ways goes slightly beyond -- see Cinelli's Crash Course [@cinelli2020crash] and McElreath 2023 Rethinking lectures 5 and 6.
 
 As such, it will discuss:
 
-Multiple regression as an alternative to randomization for blocking back-door paths; Table 2 fallacy and the danger of garbage can regression (e.g., blocking a mediator, collider bias, conditioning on post-treatment); conditional vs. marginal effects; some promises (decomposing effects, mediation, front-door criterion).
+Multiple regression as an alternative to randomization for blocking back-door paths; Table 2 fallacy [@westreich2013table] and the danger of garbage can regression (e.g., blocking a mediator, collider bias, conditioning on post-treatment; @achen2005let); conditional vs. marginal effects; some promises (decomposing effects, mediation, front-door criterion).
 
-One critical take-home is that causes are not in the data (for instance, you cannot distinguish between a pipe and a fork from the data alone, because they have similar implications). A DAG cannot be built on the basis of a set of regressions. Regressions can be used to test the implications of a DAG or a set of them (for a discussion of this point in the wild, see Purzycki, Bendixen, Lightner, 2022). All this means that variable selection -- which variables to include in your adjustment set -- cannot be automated; it strictly requires prior knowledge (see also books: What if?; Causal inference by design; etc.) 
+One critical take-home is that causes are not in the data (for instance, you cannot distinguish between a pipe and a fork from the data alone, because they have similar implications). A DAG cannot be built on the basis of a set of regressions. Regressions can be used to test the implications of a DAG or a set of them [for a discussion of this point in the wild, @purzycki_coding_2022]. All this means that variable selection -- which variables to include in your adjustment set -- cannot be automated; it strictly requires prior knowledge (see also books: @hernan2020causal; @westreich2019epidemiology; etc.).
 
 The *average* person (conditional) vs. people *on average* (marginal). Y ~ X is the marginal estimate. But adjustment is critical for de-confounding. But, adjustment returns only conditional estimates. Enter g-methods.
 
@@ -102,9 +104,9 @@ As we saw above, multiple regression is a powerful tool for blocking backdoor pa
 
 One such family of tools is known as **g-methods** -- *g* for *general* or *generalized*. Here, we'll focus on one g-method in particular, often referred to as g-computation or **standardization**, while we'll also very briefly introduce another method, known as **inverse probability of treatment weighting** (IPTW). Standardization and IPTW rely on the same assumptions and will yield similar if not identical results (indeed, in many simpler cases, they are mathematically identical), but they arrive at their results at quite different analytic routes. 
 
-We focus primarily on standardization for a few reasons. First, since we want to perform our data analysis in a Bayesian framework, standardization is an obvious choice since the IPT weights are not obviously compatible with Bayes theorem (I leave out many details and some exceptions, see REFERENCE for more).
+We focus primarily on standardization for a few reasons. First, since we want to perform our data analysis in a Bayesian framework, standardization is an obvious choice since the IPT weights are not obviously compatible with Bayes theorem [for some discussion see @robins2015bayesian; @saarela2015bayesian].
 
-Second, compared to IPTW, standardization and its practical implementation seem to be often overlooked in popular text books and primers on causal inference and econometrics in the social and health sciences (e.g., Morgan & Winship, Primer, Causal Inference by Design, Mostly Harmless, Epidemiology by Design, even McElreath, although the latter stresses contrasts. It is discussed in Hernan & Robins (What if? ch. 13) but without explicit, reproducible practical/programming application, though there's a g-methods package). However, given its popularity, it's useful to at least be aware of the nuts and bolts of IPTW, too. So let's briefly present the two methods in turn.
+Second, compared to IPTW, standardization and its practical implementation seem to be often overlooked in popular text books and primers on causal inference and econometrics in the social and health sciences [e.g., @morgan2015counterfactuals; @pearl2016causal; @westreich2019epidemiology; @angrist2009mostly; @mcelreath_statistical_2020], although the latter stresses contrasts. It is discussed in [@hernan2020causal, ch. 13] but without explicit, reproducible practical/programming application, though there's a g-methods package). However, given its popularity, it's useful to at least be aware of the nuts and bolts of IPTW, too. So let's briefly present the two methods in turn.
 
 ## Inverse Probability Weighting
 Recall that the main aim of a covariate-adjusted analysis is to obtain conditional exchangeability: When we account for imbalances in covariates between treatment and control group, we say the two groups are exchangeable conditionally on the covariates. This means that the two groups are comparable such that if we detect a difference between the groups after the intervention, we can interpret that difference as a causal effect of the intervention. 
@@ -147,7 +149,7 @@ glm(Y ~ X, data = gdat, weights = w)
 
 The MSM recovers the simulated coefficient for $X$ ($\beta x =$ `r bX`), even though the model does not adjust for $Z$ in a traditional sense. This is because we adjusted for $Z$ using weights. Note that this simple example could also, of course, be obtained using simple multiple regression that adjusted for $X$ and $Z$. This, however, will not be so, when we tackle more complex longitudinal data in the next section.
 
-There are at least two ways to improve on our simple IPTW workflow above. First, above we calculated unstabilized weights, but in many cases, so-called **stabilized weights** are preferred (and in all cases, it's good to know about both). The stabilized weights are different from the unstabilized in that the numerator is the unconditional inverse probability of treatment. They can be calculated with an intercept-only regression on treatment.
+There are at least two ways to improve on our simple IPTW workflow above. First, above we calculated unstabilized weights, but in many cases (and always with continuous exposures), so-called **stabilized weights** are preferred (and in all cases, it's good to know about both). In brief, the stabilized weights are different from the unstabilized in that the numerator is the unconditional inverse probability of treatment and they guard against extreme weights and, in turn, variance-inflation [for more detail, see @chesnaye2022introduction]. The stabilized weights can be calculated with an intercept-only regression on treatment.
 
 ```{r iptwsw}
 # intercept-only model on treatment
@@ -343,7 +345,7 @@ yX1contrast <- mean_hdci((yX1_1[,1] - yX1_0[,1]))
 
 By breaking the procedure down into separate models -- one for each time point and treatment -- we by-pass the problem that a single regression runs into, namely that $Z_1$ is both a collider and a confounder. The resulting contrasts, stored in `yX0contrast` and `yX1contrast`, are valid causal estimates of the joint effects of each treatment on the outcome.
 
-Now for the finale. The above example comes from What if?, and it's useful in that illustrates how regression modeling alone breaks if our estimands require different adjustment sets (e.g., if a variable is both a confounder that we want to adjust for and a collider that we want to remain unadjusted). But let's take standardization for a spin in a real-world data analysis example. Vanderweele et al. sets the stage for our example: religion and (mental) health.
+Now for the finale. The above example comes from @hernan2020causal, and it's useful in that illustrates how regression modeling alone breaks if our estimands require different adjustment sets (e.g., if a variable is both a confounder that we want to adjust for and a collider that we want to remain unadjusted). But let's take standardization for a spin in a real-world data analysis example. @vanderweele2016causal sets the stage for our example: religion and (mental) health.
 
 The DAG could look something like figure \ref{dagvelux}. 
 
@@ -552,7 +554,7 @@ diptw <- d[complete.cases(d),] # complete cases
 ## Computing IPTW with a continuous exposure: https://www.andrewheiss.com/blog/2020/12/01/ipw-binary-continuous/#continuous-treatments
 
 ## the stabilized weights for religion_t1 is 1 (since the numerator and the denominator is the same)
-## cf., VanderWeel et al. (online appendix)
+## cf., VanderWeele et al. (online appendix)
 
 ## numerator model for religion_t2
 r2exppn <- glm(religion_2 ~ gender + age.c + education + household_income + religion_1, data = diptw)
@@ -752,4 +754,8 @@ iptw.velux.r3interval <- boot.ci(iptw.velux.result,
 
 <!-- From VanderWeele et al. -->
 
+\newpage
 
+# References {-}
+
+<div id="refs"></div>
