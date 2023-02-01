@@ -88,7 +88,7 @@ This does not mean that all hope is lost. Causal inference in observational or p
 
 # Blocking backdoors
 
-This section riffs on -- and in a few ways goes slightly beyond -- see Cinelli's Crash Course [@cinelli2020crash] and McElreath 2023 Rethinking lectures 5 and 6.
+This section riffs on -- and in a few ways goes slightly beyond -- Cinelli's Crash Course [@cinelli2020crash] and McElreath 2023 Rethinking lectures 5 and 6. Many other pedagogical pieces exist, see e.g. @lubke2020we, @rohrer2018thinking, @wysocki2022statistical.
 
 As such, it will discuss:
 
@@ -102,7 +102,7 @@ The *average* person (conditional) vs. people *on average* (marginal). Y ~ X is 
 
 As we saw above, multiple regression is a powerful tool for blocking backdoor paths. This allows for causal interpretation of the focal parameter(s) (but, importantly, *not* the control variables). However, regression has drawbacks that makes it insufficient for many common causal estimands, in particular when there are many covariates with complex relationships. Often, we're interested in marginal, not conditional, average treatment effects -- that is, average treatment effects in a population as a whole, not just subsets thereof. In more complicated data structures, such as longitudinal studies with dynamical relationships between treatment and outcome, regression alone will also fall short. In all these cases, we need a few additional tools in the trunk.
 
-One such family of tools is known as **g-methods** -- *g* for *general* or *generalized*. Here, we'll focus on one g-method in particular, often referred to as g-computation or **standardization**, while we'll also very briefly introduce another method, known as **inverse probability of treatment weighting** (IPTW). Standardization and IPTW rely on the same assumptions and will yield similar if not identical results (indeed, in many simpler cases, they are mathematically identical), but they arrive at their results at quite different analytic routes. 
+One such family of tools is known as **g-methods** -- *g* for *general* or *generalized* [@robins1986new]. Here, we'll focus on one g-method in particular, often referred to as g-computation [e.g. @snowden2011implementation; @ahern2009estimating] or **standardization** [e.g. @vansteelandt2011invited; @hernan2020causal, ch. 13], while we'll also very briefly introduce another method, known as **inverse probability of treatment weighting** (IPTW). Standardization and IPTW rely on the same assumptions and will yield similar if not identical results (indeed, in many simpler cases, they are mathematically identical), but they arrive at their results at quite different analytic routes. 
 
 We focus primarily on standardization for a few reasons. First, since we want to perform our data analysis in a Bayesian framework, standardization is an obvious choice since the IPT weights are not obviously compatible with Bayes theorem [for some discussion see @robins2015bayesian; @saarela2015bayesian].
 
@@ -245,7 +245,7 @@ mean_hdci(Y.x1[,1] - Y.x0[,1])
 
 The distribution of contrasts calculated in that final step are marginal estimates in that the two expectations $E[Y^{Z=z, X=1}]$ and $E[Y^{Z=z, X=0}]$ marginalize or average over the covariate(s) $Z$. We summarize the contrast by its posterior mean and HPDI, using the `tidybayes` package.
 
-When performing standardization in a frequentist setting, we'd have to resort to bootstrapping in order to obtain valid uncertainty around the contrast, as with IPTW. However, in a Bayesian setting, we get uncertainty in one go, since the predicted values are valid posterior distributions of expectations.
+When performing standardization in a frequentist setting, we'd have to resort to bootstrapping in order to obtain valid uncertainty around the contrast [see e.g. @snowden2011implementation], as with IPTW. However, in a Bayesian setting, we get uncertainty in one go, since the predicted values are valid posterior distributions of expectations.
 
 Okay, now that we have introduced g-methods in a very simple data context, we're ready to tackle more complex data structures where regression modeling alone falls short.
 
@@ -343,9 +343,11 @@ yX1_0 <- posterior_epred(yX1model, newdata = transform(lgdat, X_0=0))
 yX1contrast <- mean_hdci((yX1_1[,1] - yX1_0[,1]))
 ```
 
-By breaking the procedure down into separate models -- one for each time point and treatment -- we by-pass the problem that a single regression runs into, namely that $Z_1$ is both a collider and a confounder. The resulting contrasts, stored in `yX0contrast` and `yX1contrast`, are valid causal estimates of the joint effects of each treatment on the outcome.
+By breaking the procedure down into separate models -- one for each time point and treatment -- we by-pass the problem that a single regression runs into, namely that $Z_1$ is both a collider and a confounder. The resulting contrasts, stored in `yX0contrast` and `yX1contrast`, are valid causal estimates of the joint effects of each treatment on the outcome, to the extent assumptions hold (we discuss these assumptions in the next section).
 
-Now for the finale. The above example comes from @hernan2020causal, and it's useful in that illustrates how regression modeling alone breaks if our estimands require different adjustment sets (e.g., if a variable is both a confounder that we want to adjust for and a collider that we want to remain unadjusted). But let's take standardization for a spin in a real-world data analysis example. @vanderweele2016causal sets the stage for our example: religion and (mental) health.
+Now for the finale. The above example comes from @hernan2020causal, and it's useful in that it illustrates how regression modeling alone breaks if our estimands require different adjustment sets (e.g., if a variable is both a confounder that we want to adjust for and a collider that we want to keep unadjusted). 
+
+But let's take standardization for a spin in a real-world data analysis example. @vanderweele2016causal sets the stage for our example: religion and (mental) health.
 
 The DAG could look something like figure \ref{dagvelux}. 
 
@@ -488,6 +490,27 @@ The objects `yr1contrast`, `yr2contrast` and `yr3contrast` store the posterior m
 
 One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardisation in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation.
 
+In the next section, we discuss assumptions that are required for a causal interpretation of estimates obtained via standardization and IPTW.
+
+## It's assumptions all the way down
+
+Causal inference in an observational setting generally requires several key conditions for a causal interpretation of the main exposure [e.g. @hernan2020causal, ch. 13; @naimi2017introduction]. One way to think of this exercise is that when assumptions are (assumed) satisfied, an observational study will have emulated a randomized study.
+
+First, we assume that the potential outcomes under varying levels of exposure are independent from the observed outcomes (*conditional exchangeability*). In a perfectly randomized trial, this is the case since randomization ensures that the probability of treatment is independent of the outcome –- we say
+that the treatment and control groups are "exchangeable". However, in an observational setting, there can be countless factors that both influence exposure levels and the outcome. It’s a main goal of a statistical model to adjust for these confounding factors, in order to obtain conditional exchangeability. For instance, as we've seen, a DAG is useful for guiding statistical adjustment. In essence, we aim to statistically block all backdoor paths that both influence our exposure M and outcome Y of interest.
+
+Second, and relatedly, we assume *no model misspecification*, which entails that our model is specified correctly (e.g., in terms of functional relationships, no omitted confounding variables, etc.). However, whether any given statistical model and adjustment sets are sufficient to ensure
+these conditions hold is generally not empirically testable. 
+
+Third, and similarly, we assume that our variables are *measured without error*, another difficult-to-verify assumption.
+
+Fourth, we assume that an individual’s observed outcome under a given exposure is equivalent to the potential outcome that would’ve been observed under that exposure (*counterfactual consistency*). In other words, in the context of our g-computation procedure, when we obtain expected values for participants setting $X = x$, we assume that we obtain the values that we in fact would’ve observed, if those participants had been observed under
+$X = x$.
+
+Fifth, we assume *positivity*, which implies that individuals have similar exposure levels within all confounder levels. While this is empirically unlikely to hold in particular (for instance, when we have several covariates, including continuous ones, several groups, etc.), lack of positivity can be ignored to the extent that we’re willing to assume that estimates for the strata with zero observations can be extrapolated from the model fitted on the observed strata [@hernan2020causal, p. 162]. 
+
+Sixth, and more trivially, we assume temporal ordering of relevant variables, for instance such that exposures and mediating variables occur before an outcome.
+
 # To do:
 
 - double check notation throughout -- within-document consistency and external consistency with e.g., What if? book
@@ -499,7 +522,7 @@ One last comment, before we move on: In our estimation above, we silently cut so
 - Missing data
 MCAR, MAR, MNAR. See Morris et al. (2022, appendix) for discussion of missingness in X and/or Y in the context of g-comp.
 
-Above, we conducted a complete cases analysis, under the assumption that missingness is unsystematic. One way to investigate this assumption a little bit further is to ask, *does health predict dropout at the final measurement*? This is not a bulletproof test, but it's a start.
+Above, we conducted a complete cases analysis, under the assumption that missingness is unsystematic. One way to investigate this assumption a little bit further is to ask, *does health predict dropout at the final measurement*? This is not a bulletproof "test" by any means, but it's a start.
 
 ```{r healthmisss, eval = FALSE}
 # 1 if health is missing at t4, 0 otherwise
@@ -515,8 +538,6 @@ healthmiss_mod <- brm(health_4miss ~ health_1 + health_2 + health_3,
 ```
 
 
-- Assumptions, assumptions, assumptions
-
 See end of Standardization chapter in What if?
 
 - Econometric techniques
@@ -527,7 +548,7 @@ Regression discontinuity, instrumental variables, synthetic controls
 
 Attrition (simple MNAR analysis), selection bias, spill-over, non-compliance (IV of randomization), etc.
 
-- Transportability of treatment effects (see What if? chapter)
+- Transportability of treatment effects (see What if? chapter); also extends naturally from standardisation/g-computation.
 
 - Red herrings
 Testing for covariate imbalances
@@ -759,3 +780,5 @@ iptw.velux.r3interval <- boot.ci(iptw.velux.result,
 # References {-}
 
 <div id="refs"></div>
+
+
