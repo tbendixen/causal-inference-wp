@@ -9,6 +9,7 @@ header-includes:
 output:
   pdf_document:
     number_sections: true
+    toc: true
 bibliography: [wp-bib.bib]
 ---
 
@@ -22,6 +23,8 @@ knitr::opts_chunk$set(echo = TRUE,
                       cache.comments = FALSE)
 
 ```
+
+\newpage
 
 # Introduction
 
