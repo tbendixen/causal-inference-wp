@@ -734,9 +734,7 @@ First, we load the data and packages and set the number of iterations to use in 
 ```{r veluxprep}
 veluxData <- read.csv("velux_data.csv")
 
-veluxD <- veluxData[complete.cases(veluxData[, !names(veluxData) %in% c("religion_4")]),]
-
-d <- with(veluxD, 
+veluxData <- with(veluxData, 
           data.frame(
             id,
             R1 = religion_1,
@@ -751,6 +749,8 @@ d <- with(veluxD,
             E = education,
             I = household_income)
 )
+
+d <- veluxData[complete.cases(veluxData[, !names(veluxData) %in% c("R4")]),]
 
 iter <- 2000
 
@@ -871,7 +871,7 @@ data.frame(ATE = c(ateR1$ate, ateR2$ate, ateR3$ate),
 
 ```
 
-One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardisation in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation.
+One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardisation in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation; non-default priors.
 
 In the next section, we discuss assumptions that are required for a causal interpretation of estimates obtained via standardization and IPTW.
 
@@ -898,7 +898,9 @@ But even setting this issue aside, and even if any particular dataset is "comple
 
 A comprehensive overview of data analysis in the presence of missing data is obviously outside the scope of this brief primer. Instead, I want to give a compact run down of ways to think about missing data and some practical pointers to handling it.
 
-## Missing (completely) at random
+## Bayesian imputation: Missing (completely) at random
+
+## Sampling bias: Poststratification
 
 ## Missing not at random
 
@@ -920,17 +922,47 @@ A comprehensive overview of data analysis in the presence of missing data is obv
 
 Above, we conducted a complete cases analysis, under the assumption that missingness is unsystematic. One way to investigate this assumption a little bit further is to ask, *does health predict dropout at the final measurement*? This is not a bulletproof "test" by any means, but it's a start.
 
-```{r healthmisss, eval = FALSE}
-# 1 if health is missing at t4, 0 otherwise
-veluxdat$health_4miss <- ifelse(is.na(veluxdat$health_4), 1, 0)
+```{r miss}
+veluxData <- read.csv("velux_data.csv")
 
-# Does health at previous measurements predict missingness at final follow-up?
-healthmiss_mod <- brm(health_4miss ~ health_1 + health_2 + health_3,
-                      data = veluxdat,
-                      family = bernoulli,
+veluxData <- with(veluxData, 
+          data.frame(
+            id,
+            R1 = religion_1,
+            R2 = religion_2,
+            R3 = religion_3,
+            H1 = health_1,
+            H2 = health_2,
+            H3 = health_3,
+            H4 = health_4,
+            G = gender,
+            A = age.c,
+            E = education,
+            I = household_income)
+)
+
+# 1 if health is missing at t4, 0 otherwise
+veluxData$H4miss <- ifelse(is.na(veluxData$H4), 1, 0)
+```
+
+```{r hmissmod, dependson="miss"}
+# What predicts missingness at final follow-up?
+hNAmod <- brm(H4miss ~ mo(H1) + mo(H2) + mo(H3) + G + A + mo(E) + mo(I),
+                      data = veluxData,
+                      family = "bernoulli",
                       cores = 4)
 
 ```
+
+```{r rmissmod, dependson="miss"}
+# Does religion at previous measurements predict missingness at final follow-up?
+rNAmod <- brm(H4miss ~ mo(R1) + mo(R2) + mo(R3),
+                      data = veluxData,
+                      family = "bernoulli",
+                      cores = 4)
+```
+
+
 
 See end of Standardization chapter in What if?
 
