@@ -686,10 +686,10 @@ The DAG could look something like figure \ref{dagvelux}.
         \node (x2) at (1,0) {$R_2$};
         \node (x3) at (3,0) {$R_3$};
         \node (x4) at (5,0) {$R_4$};
-        \node (z1) at (-1,2) {$Z_1$};
-        \node (z2) at (1,2) {$Z_2$};
-        \node (z3) at (3,2) {$Z_3$};
-        \node (z4) at (5,2) {$Z_4$};
+        \node (z1) at (-1,2) {$H_1$};
+        \node (z2) at (1,2) {$H_2$};
+        \node (z3) at (3,2) {$H_3$};
+        \node (z4) at (5,2) {$H_4$};
         \node (c) at (-3,1) {$C$};
         \path (x1) edge (x2);
         \path (z1) edge (z2);
@@ -717,119 +717,159 @@ The DAG could look something like figure \ref{dagvelux}.
     \label{dagvelux}
 \end{figure}
 ```
-$C$ is a set of baseline covariates comprising standard demographics, including age, gender, income and education; the indefinite arrows indicate confounding on all observed variables). Our exposure $R_{1-4}$ represent level of religiosity ("How important is religion to you?", measured on a 1 ("not at all important") to 4 ("very important") scale.) measured at four time points, and $Z_{1-4}$ are subjective general health ("How would you describe your current health?", measured on a 1 ("very bad") to 5 ("very good") scale.), a set of time-varying covariates. Note the complex causal relationships across time between $R$ and $Z$.
+$C$ is a set of baseline covariates comprising standard demographics, including age, gender, income and education; the indefinite arrows indicate confounding on all observed variables). Our exposure $R_{1-4}$ represent level of religiosity ("How important is religion to you?", measured on a 1 ("not at all important") to 4 ("very important") scale.) measured at four time points, and $H_{1-4}$ are subjective general health ("How would you describe your current health?", measured on a 1 ("very bad") to 5 ("very good") scale.), a set of time-varying covariates. Note the complex causal relationships across time between $R$ and $H$.
 
 To provide some background, this dataset comes from a panel study on a pseudo-representative sample of Danes during the COVID-19 pandemic (for more detail, see Mauritsen et al., *in review*). As investigators, we are interested in assessing whether religiosity was a protective factor in terms of subjective general well-being in the context of the stress and uncertainty of a pandemic. If that was so, we'd expect a positive effect of religiosity on subjective health.
 
-Suppose, then, that our estimand of interest is the contrast in subjective well-being at the final measurement time (that is, $Y=Z_4$) between being "maximally religious" $Y^{R_1=R_2=R_3=4}$ and being "minimally religious" $Y^{R_1=R_2=R_3=1}$. That is, we're interested in the *joint effects* of being religious on health at all time points up to the final measurement, meaning partitioning the respective effects of religiosity level at each time point on the outcome, *except those running through the subsequent measurements of religiosity*.
+Suppose, then, that our estimand of interest is the contrast in subjective well-being at the final measurement time (that is, $Y=H_4$) between being "maximally religious" $Y^{R_1=R_2=R_3=4}$ and being "minimally religious" $Y^{R_1=R_2=R_3=1}$. That is, we're interested in the *joint effects* of being religious on health at all time points up to the final measurement, meaning partitioning the respective effects of religiosity level at each time point on the outcome, *except those running through the subsequent measurements of religiosity*.
 
-Note that we could've made the causal diagram even more involved by hypothesizing that our two time-varying variables also caused future versions of themselves beyond the immediately subsequent time point (e.g., adding paths $R_1 \rightarrow R_3$, $R_1 \rightarrow R_4$, $Z_1 \rightarrow Z_3$, $Z_1 \rightarrow Z_4$, etc.).
+Note that we could've made the causal diagram even more involved by hypothesizing that our two time-varying variables also caused future versions of themselves beyond the immediately subsequent time point (e.g., adding paths $R_1 \rightarrow R_3$, $R_1 \rightarrow R_4$, $H_1 \rightarrow H_3$, $H_1 \rightarrow H_4$, etc.).
 
-However, even as it stands, this analysis is not straightforward. Consider for instance that some of the effect of $R_1$ on the outcome works through $Z_2$ (and $Z_3$) and that if we adjust for $Z_2$ (or $Z_3$), we'll block some of the effect of $R_1$. But note too that $Z_2$ (through $Z_3$) confounds the relationship between $R_3$ and the outcome, such that if we do not adjust for $Z_2$ (or $Z_3$), the estimate for the effect of $R_3$ will be biased.
+However, even as it stands, this analysis is not straightforward. Consider for instance that some of the effect of $R_1$ on the outcome works through $H_2$ (and $H_3$) and that if we adjust for $H_2$ (or $H_3$), we'll block some of the effect of $R_1$. But note too that $H_2$ (through $H_3$) confounds the relationship between $R_3$ and the outcome, such that if we do not adjust for $H_2$ (or $H_3$), the estimate for the effect of $R_3$ will be biased.
 
-All this implies that $Z_2$ is *both* a mediator that we'd want to keep unadjusted *and* a confounder that we'd want to adjust for. A single regression cannot handle this situation. But, as we've already seen, g-methods can.
+All this implies that $H_2$ is *both* a mediator that we'd want to keep unadjusted *and* a confounder that we'd want to adjust for. A single regression cannot handle this situation. But, as we've already seen, g-methods can.
 
-First, we load the data, packages, and set the path to `cmdstan`, which helps speed up the sampling procedure. We also set the number of iterations to use in sampling. For now, we use only the complete cases (in all variables but for $R_4$, which we're not actually using at this moment); below, we'll discuss in more detail what a complete cases analysis implies and ways of handling missing covariate values when using standardisation.
+First, we load the data and packages and set the number of iterations to use in sampling. For now, we use only the complete cases (in all variables but for $R_4$, which we're not actually using at this moment); below, we'll discuss in more detail what a complete cases analysis implies and ways of handling missing covariate values when using standardisation.
 
-```{r veluxprep, eval = TRUE}
-veluxdat <- read.csv("velux_data.csv")
+```{r veluxprep}
+veluxData <- read.csv("velux_data.csv")
 
-velux <- veluxdat[complete.cases(veluxdat[, !names(veluxdat) %in% c("religion_4")]),]
+veluxD <- veluxData[complete.cases(veluxData[, !names(veluxData) %in% c("religion_4")]),]
 
-velux <- data.frame(
-  id,
-  R1 = religion_1,
-  R2 = religion_2,
-  R3 = religion_3,
-  H1 = health_1,
-  H2 = health_2,
-  H3 = health_3,
-  H4 = health_4,
-  G = gender,
-  A = age.c,
-  E = education
-   
+d <- with(veluxD, 
+          data.frame(
+            id,
+            R1 = religion_1,
+            R2 = religion_2,
+            R3 = religion_3,
+            H1 = health_1,
+            H2 = health_2,
+            H3 = health_3,
+            H4 = health_4,
+            G = gender,
+            A = age.c,
+            E = education,
+            I = household_income)
 )
-
-library(cmdstanr)
-library(brms)
-library(tidybayes)
-
-set_cmdstan_path("C:\\cmdstan\\cmdstan-2.29.0")
 
 iter <- 2000
 
 ```
 
-Then, we fit the model for $R_1$ on the outcome $Z_4$. We're interested in estimating all paths from $R_1 \rightarrow Z_4$ except those through subsequent religiosity measurements, while controlling for the demographic confounders. This means that, in addition to the baseline covariates and our main exposure $R_1$, we only need to include $R_2$ in the model. Adjusting for $R_2$ blocks the paths from $R_1$ to the outcome through subsequent measures of religion. Had we assumed the path $R_1 \rightarrow R_3$, we'd have to include $R_3$, too, to block the path $R_1 \rightarrow R_3 \rightarrow Z_4$.
+Then, we fit the model for $R_1$ on the outcome $H_4$. We're interested in estimating all paths from $R_1 \rightarrow H_4$ except those through subsequent religiosity measurements, while controlling for the demographic confounders. This means that, in addition to the baseline covariates and our main exposure $R_1$, we only need to include $R_2$ in the model. Adjusting for $R_2$ blocks the paths from $R_1$ to the outcome through subsequent measures of religion. Had we assumed the path $R_1 \rightarrow R_3$, we'd have to include $R_3$, too, to block the path $R_1 \rightarrow R_3 \rightarrow H_4$.
 
-```{r veluxr1, eval = FALSE}
+```{r veluxr1, dependson="veluxprep"}
 ## Outcome model for religion_t1
-r1model <- brm(health_4 ~ gender + age.c + education + household_income + religion_1 + religion_2,
-               data = d,
-               cores = 4, iter = iter, control = list(adapt_delta = 0.99),
-               backend = "cmdstanr")
-
-rstan::check_hmc_diagnostics(r1model$fit)
-pp_check(r1model)
+r1mod <- brm(H4 ~ G + A + E + I + R1 + R2,
+             data = d,
+             cores = 4, 
+             iter = iter, 
+             control = list(adapt_delta = 0.99))
 
 # Min. religious: E[Y{R_1=1, C=c, R_2=r_2}]
-yr1_0 <- posterior_epred(r1model, newdata = transform(d, religion_1=1))
+ER10 <- add_epred_draws(r1mod, newdata = transform(d, R1=1))
 
 # Max. religious: E[Y{R_1=4, C=c, R_2=r_2}]
-yr1_1 <- posterior_epred(r1model, newdata = transform(d, religion_1=4))
+ER11 <- add_epred_draws(r1mod, newdata = transform(d, R1=4))
 
 # Contrast: E[Y{R_1=4}] - E[Y{R_1=1}] 
-(yr1contrast <- mean_hdci((yr1_1[,1] - yr1_0[,1])))
+ateR1 <- data.frame(ER10 = ER10$.epred,
+                    ER11 = ER11$.epred,
+                    draw = ER11$.draw) |> 
+  # for each posterior draw...
+  group_by(draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(ER11 - ER10))
+
+# compare with marginaleffects
+median_qi(ateR1$ate)
+marginaleffects::avg_comparisons(r1mod, 
+                                 variables = list(R1 = "minmax"))
 
 ```
 
 Next, we fit a model for $R_2$. In addition to the main exposure and the demographic covariates, we need to adjust for both $R_1$ (because it's a confounder on the path $R_2 \leftarrow R_1 \rightarrow Z_4$), $R_3$ (to block the path $R_2 \rightarrow R_3 \rightarrow Z_4$) and $Z_1$ (because it's a confounder on the path $R_2 \leftarrow Z_1 \rightarrow Z_2 \rightarrow Z_3 \rightarrow Z_4$).
 
-```{r veluxr2, eval = FALSE}
+```{r veluxr2, dependson="veluxprep"}
 ## Outcome model for religion_t2
-r2model <- brm(health_4 ~ gender + age.c + education + household_income + religion_1 + religion_2 + religion_3 + health_1,
-               data = d,
-               cores = 4, iter = iter, control = list(adapt_delta = 0.99),
-               backend = "cmdstanr")
+r2mod <- brm(H4 ~ G + A + E + I + R1 + R2 + R3 + H1,
+             data = d,
+             cores = 4, 
+             iter = iter, 
+             control = list(adapt_delta = 0.99))
 
-rstan::check_hmc_diagnostics(r2model$fit)
-pp_check(r2model)
+# Min. religious: E[Y{R_1=1, C=c, R_2=r_2, R_3=r_3, H_1=h_1}]
+ER20 <- add_epred_draws(r2mod, newdata = transform(d, R2=1))
 
-# Min. religious: E[Y{R_2=1, C=c, H_1=h_1, R_1=r_1, R_3=r_3}]
-yr2_0 <- posterior_epred(r2model, newdata = transform(d, religion_2=1))
+# Max. religious: E[Y{R_1=4, C=c, R_2=r_2, R_3=r_3, H_1=h_1}]
+ER21 <- add_epred_draws(r2mod, newdata = transform(d, R2=4))
 
-# Max. religious: E[Y{R_2=4, C=c, H_1=h_1, R_1=r_1, R_3=r_3}]
-yr2_1 <- posterior_epred(r2model, newdata = transform(d, religion_2=4))
+# Contrast: E[Y{R_1=4}] - E[Y{R_1=1}] 
+ateR2 <- data.frame(ER20 = ER20$.epred,
+                    ER21 = ER21$.epred,
+                    draw = ER21$.draw) |> 
+  # for each posterior draw...
+  group_by(draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(ER21 - ER20))
 
-# Contrast: E[Y{R_2=4}] - E[Y{R_2=1}] 
-(yr2contrast <- mean_hdci((yr2_1[,1] - yr2_0[,1])))
+# compare with marginaleffects
+median_qi(ateR2$ate)
+marginaleffects::avg_comparisons(r2mod, 
+                                 variables = list(R2 = "minmax"))
+
 ```
 
 Finally, the model for $R_3$ adjusts for the demographic covariates as well as $R_2$ (because it's a confounder on the path $R_3 \leftarrow R_2 \rightarrow Z_4$) and $Z_2$ (because it's a confounder on the path $R_3 \leftarrow Z_2 \rightarrow Z_4$ through $Z_3$). Notice that, had we assumed a causal relationship $R_4 \rightarrow Z_4$, $R_4$ would have to be included, too.
 
-```{r veluxr3, eval = FALSE}
+```{r veluxr3, dependson="veluxprep"}
 # Outcome model for religion_t3
-r3model <- brm(health_4 ~ gender + age.c + education + household_income + religion_2 + religion_3 + health_2,
+r3mod <- brm(H4 ~ G + A + E + I + R2 + R3 + H2,
                data = d,
-               cores = 4, iter = iter, control = list(adapt_delta = 0.99),
-               backend = "cmdstanr")
+               cores = 4, 
+               iter = iter, 
+               control = list(adapt_delta = 0.99))
 
-rstan::check_hmc_diagnostics(r3model$fit)
-pp_check(r3model)
+# Min. religious: E[Y{R_1=1, C=c, R_2=r_2, R_3=r_3, H_2=h_2}]
+ER30 <- add_epred_draws(r3mod, newdata = transform(d, R3=1))
 
-# Min. religious: E[Y{R_3=1, C=c, H_2=h_2, R_2=r_2}]
-yr3_0 <- posterior_epred(r3model, newdata = transform(d, religion_3=1))
-
-# Max. religious: E[Y{R_3=4, C=c, H_2=h_2, R_2=r_2}]
-yr3_1 <- posterior_epred(r3model, newdata = transform(d, religion_3=4))
+# Max. religious: E[Y{R_1=4, C=c, R_2=r_2, R_3=r_3, H_2=h_2}]
+ER31 <- add_epred_draws(r3mod, newdata = transform(d, R3=4))
 
 # Contrast: E[Y{R_3=4}] - E[Y{R_3=1}] 
-(yr3contrast <- mean_hdci((yr3_1[,1] - yr3_0[,1])))
+ateR3 <- data.frame(ER30 = ER30$.epred,
+                    ER31 = ER31$.epred,
+                    draw = ER30$.draw) |> 
+  # for each posterior draw...
+  group_by(draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(ER31 - ER30))
+
+# compare with marginaleffects
+median_qi(ateR3$ate)
+marginaleffects::avg_comparisons(r3mod, 
+                                 variables = list(R3 = "minmax"))
 
 ```
 
-The objects `yr1contrast`, `yr2contrast` and `yr3contrast` store the posterior means and HPDIs of the joint effects of religiosity on subjective health. You can inspect the contrasts to see that they huddle mostly around zero, meaning that we find little evidence for the notion that religion on average works as a protective factor during the pandemic: At least in these (self-reported) data, religious individuals were not more or less healthy.
+The objects `ateR1`, `ateR2` and `ateR3` store the posterior means and HPDIs of the joint effects of religiosity on subjective health. Inspect the plot below to see that the contrasts huddle mostly around zero, meaning that we find little evidence for the notion that religion on average works as a protective factor during the pandemic: At least in these (self-reported) data, more religious individuals were not more healthy. If anything, these data point to the opposite relationship, in that most of the joint posterior mass is negative. 
+
+```{r veluxstandplot, dependson="veluxprep", echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+theme_set(theme_gray(base_size = 10) +
+            theme(panel.grid = element_blank()))
+
+data.frame(ATE = c(ateR1$ate, ateR2$ate, ateR3$ate),
+           type = c(rep("R1 -> H4", length(ateR1$ate)),
+                    rep("R2 -> H4", length(ateR2$ate)),
+                    rep("R3 -> H4", length(ateR3$ate)))) |>
+  ggplot(aes(x = ATE, y = type)) +
+  stat_halfeye(point_interval = "mean_hdci", .width = 0.9) +
+  ylab(NULL) +
+  xlim(c(-1,1)) +
+  labs(title = "Joint effects of religiosity on health",
+       subtitle = "Posterior means and 90% HDIs in black")
+
+```
 
 One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardisation in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation.
 
@@ -888,8 +928,7 @@ veluxdat$health_4miss <- ifelse(is.na(veluxdat$health_4), 1, 0)
 healthmiss_mod <- brm(health_4miss ~ health_1 + health_2 + health_3,
                       data = veluxdat,
                       family = bernoulli,
-                      cores = 4,
-                      backend = "cmdstanr")
+                      cores = 4)
 
 ```
 
