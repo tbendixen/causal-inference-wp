@@ -20,7 +20,20 @@ knitr::opts_chunk$set(echo = TRUE,
                       warning = FALSE,
                       message = FALSE,
                       error = TRUE,
-                      cache.comments = FALSE)
+                      cache.comments = FALSE,
+                      cache.lazy = FALSE)
+
+```
+
+```{r envir, cache=FALSE, echo = FALSE}
+library(dplyr)
+library(ggplot2)
+library(tidybayes)
+library(boot)
+library(brms)
+library(tidybayes)
+
+memory.limit(size=56000)
 
 ```
 
@@ -30,7 +43,7 @@ knitr::opts_chunk$set(echo = TRUE,
 
 Causal inference is about what works, when, for whom and under what circumstances. When an event occurs -- a medical treatment, social intervention, marketing campaign, etc. -- we want to know what happened as a result, if anything. But -- and here's the crucial insight -- we also need to know what would have happened *in the absence of* the event, all else being equal. That is, the causal effect of an event is the difference between what actually happened and the counter-factual.
 
-This working paper is a very brief practical primer on causal inference in the health and social sciences. We'll use minimal formal notation and instead emphasize practical computational implementation using the `R` scripting language. It assumes a basic understanding of Bayesian regression and generalized linear modeling in `R`. Most importantly, however, it assumes an interest in the question of how we can ever know whether something caused something else and to what extent.
+This working paper is a very brief practical primer on causal inference in the social, health, and business sciences. We'll use minimal formal notation and instead emphasize practical computational implementation using the `R` scripting language. It assumes a basic understanding of Bayesian regression and generalized linear modeling in `R`. Most importantly, however, it assumes an interest in the question of how we can ever know whether something caused something else and to what extent.
 
 Without further ado, let's dive in.
 
@@ -40,9 +53,9 @@ We said just above that the causal effect of an event is the difference between 
 
 We can never re-play history or anything of the sort. For instance, we can never give a medical treatment to a patient and also *not* give the treatment to said patient. The counter-factual outcome is often missing. Causal inference is, then, fundamentally a missing data problem.
 
-So, the best we can do is to *infer* the counter-factual by estimation, approximation or informed (hopefully) guesswork and contrast that with the observed state. More precisely, the best we can do is to aim at an **average treatment effect** or variants thereof. An average treatment effect of, say, a medical treatment is the difference in outcomes under receiving the treatment vs. not receiving the treatment not within an individual, like the individual treatment effect, but instead *between* individuals. Further, these individuals have to be similar enough in relevant characteristics such that, whatever the difference in outcome between the treatment and no treatment groups is, in fact, explained by the treatment alone, and not by some other events or developments.
+So, the best we can do is to *infer* the counter-factual by estimation, approximation or informed (hopefully) guesswork and contrast that with the observed state. More precisely, the best we can do is to aim at an **average treatment effect** or variants thereof. An average treatment effect of, say, a medical treatment is the difference in outcomes under receiving the treatment vs. not receiving the treatment not within an individual, like the individual treatment effect, but instead *between* individuals. Further, these individuals have to be similar enough in relevant characteristics such that, whatever the difference in outcome between the treatment and no treatment groups is, in fact, explained by the treatment alone, and not by some other events or characteristics.
 
-This, in a nutshell, is the fundamental problem of causal inference. It's simple. Deceptively so, because the real world is a mess. So we have assumptions to make. But in return we get something quite extraordinary: A rigorous, tried-and-tested framework for thinking about cause-and-effect-relationships.
+This, in a nutshell, is the fundamental problem of causal inference. It's simple. Deceptively so, because the real world is a mess. So we have assumptions to make. But in return we get something quite extraordinary: A rigorous, tried-and-tested workflow for thinking about cause-and-effect-relationships.
 
 The fundamental problem of causal inference, then, is also a *promise*: A promise that, if we're careful, honest, and transparent, we might actually get causal answers to the questions that matter most in life. Or, alternatively, we'll be told that there exist no valid answers to the questions we posed. Either is a very valuable yield.
 
@@ -50,11 +63,11 @@ The fundamental problem of causal inference, then, is also a *promise*: A promis
 
 To make the discussion more succinct, we'll use some simple formal notation and terminology. It's useful to learn these for another reason, too: perhaps you'll want to navigate the causal inference literature on your own, when you're done here.
 
-Throughout, $Y$ is our outcome on which our cause has or hasn't an effect, and $X$ is the cause, our predictor of interest -- say, receiving a particular medical treatment $X=1$ or not $X=0$. That is, in its simplest form, an average treatment effect is simply the difference in expected outcomes between receiving the treatment $Y^{X=1}$ or not $Y^{X=0}$. This quantity is often written as $E[Y^{X=1}]-E[Y^{X=0}]$, where $E(.)$ is the expectation operator, i.e. it computes the expected value.
+Throughout, $Y$ is our outcome on which our cause has or hasn't an effect, and $X$ is the cause, our predictor of interest -- say, receiving a particular medical treatment $X=1$ or not $X=0$. That is, in its simplest form, an average treatment effect is simply the difference in expected outcomes between receiving the treatment $Y^{X=1}$ or not $Y^{X=0}$. This quantity is often written as $\textrm{E}(Y^{X=1})-\textrm{E}(Y^{X=0})$, where $\textrm{E}(.)$ is the expectation operator, i.e. it computes the expected value.
 
 ## DAGs and experimental randomization
 
-One useful tool for thinking through a causal modeling problem is **DAG**s, *directed acyclic graphs*. A DAG graphs the assumed[^1] causal relationships among variables and can thereby guide subsequent analytic strategies for recovering the causal effects of interest (or can reveal that no such effects can be recovered under anu circumstances, given the DAG). *Directed* means that the relationships, denoted by arrows, are causal. *Acyclic* means that variables can't cause themselves dynamically. And *graph* means... well, that should be obvious.
+One useful tool for thinking through a causal modeling problem is **DAG**s, *directed acyclic graphs*. A DAG graphs the assumed[^1] causal relationships among variables and can thereby guide subsequent analytic strategies for recovering the causal effects of interest (or can reveal that no such effects can be recovered under any circumstances, given the DAG). *Directed* means that the relationships, denoted by arrows, are causal. *Acyclic* means that variables can't cause themselves dynamically. And *graph* means... well, that should be obvious.
 
 [^1]: Based on prior studies, theory, commonsense, or other sources of inference.
 
@@ -102,7 +115,7 @@ In sum, randomization is an efficient strategy for causal estimation, because it
 
 This does not mean that all hope is lost. Causal inference in observational or pseudo-randomized contexts is possible. But it does force us to make some assumptions and add some steps to our workflow. For instance, through relatively simple statistical techniques, we can block backdoor paths that couldn't be deleted by randomization. Next section introduces the promises and pitfalls of this approach, using regression modeling.
 
-# Blocking backdoors
+# Blocking backdoors and the elementary ingredients of DAGs
 So, how do we identify and block backdoor paths? It's actually pretty simple, at least in principle. Figure \ref{elementsdag} shows three distinct patterns that we need to be able to recognize in a DAG. We could think of these patterns as the elementary  *ingredients* of causal graphs, since any given DAG, no matter its complexity, is constructed by combining one or more of these. 
 
 ```{=tex}
@@ -137,7 +150,7 @@ So, how do we identify and block backdoor paths? It's actually pretty simple, at
 
 To see this, consider first the "fork" on the left. You'll see that it's similar to Figure \ref{dag1}, except that we've left out the arrow $X \rightarrow Y$. A fork implies that $X$ and $Y$ are only associated because of a common causal influence of $Z$. In other words, the relationshiop between $X$ and $Y$ is *confounded*. 
 
-Given this DAG, then, we should not expect a *direct* causal influence of $X$ on $Y$; they are only associated through the confounding backdoor path $X \leftarrow Z \rightarrow Y$. By statistically adjusting for $Z$, we'd block the backdoor path, making $X$ and $Y$ independent from each other. 
+Given this DAG, then, we should not expect a *direct* causal influence of $X$ on $Y$; they are only associated through the confounding backdoor path $X \leftarrow Z \rightarrow Y$. By statistically adjusting for $Z$, we'd block the backdoor path, making $X$ and $Y$ independent from each other. Adjusting for $Z$ then achieves the same thing as randomization, in that it allows us to delete the arrow going into $X$ from $Z$, as we saw above. 
 
 Let's verify this in a simple simulation.
 
@@ -154,9 +167,11 @@ Y <- Z*bZ + rnorm(n, 0,1)
 
 forkdat <- data.frame(Y=Y, X=X, Z=Z)
 
-glm(Y ~ X, data = forkdat) # bX is non-zero; confounded
+# bX is non-zero; confounded
+glm(Y ~ X, data = forkdat)
 
-glm(Y ~ X + Z, data = forkdat) # bX is zero; de-confounded
+# bX is zero; de-confounded
+glm(Y ~ X + Z, data = forkdat)
 
 ```
 
@@ -164,7 +179,7 @@ glm(Y ~ X + Z, data = forkdat) # bX is zero; de-confounded
 
 Consider next the "pipe". As with the fork, the pipe implies that $X$ and $Y$ are only associated through $Z$. This time around, though, $Z$ is not a confounder in a traditional sense, since it's causally influenced by $X$. In other words, $Z$ is a *mediator* on the path between $X$ and $Y$. This somewhat complicates our adjustment strategy. 
 
-If we're interested in estimating the *total effect* of $X$ on $Y$, we would not adjust for $Z$, since adjusting for $Z$ would block the causal path. However, say we hypothesized a *direct effect* of $X$ on $Y$ in addition to the mediating path through $Z$. If we were interested in estimating only that direct effect, we would have to adjust for $Z$, since $Z$ would otherwise confound that path. 
+If we're interested in estimating the **total effect** of $X$ on $Y$, we would not adjust for $Z$, since adjusting for $Z$ would block the part of the causal path from $X$ to $Y$ that runs through $Z$. However, say we hypothesized a **direct effect** of $X$ on $Y$ in addition to the mediating path through $Z$. If we were interested in estimating only that direct effect, we would have to adjust for $Z$, since $Z$ would otherwise confound that path. 
 
 Again, we can verify this logic in a simple simulation.
 
@@ -182,9 +197,11 @@ Y <- Z*bZ + rnorm(n, 0,1)
 
 pipedat <- data.frame(Y=Y, X=X, Z=Z)
 
-glm(Y ~ X, data = pipedat) # bX is 0.5*0.5; total effect
+# bX is 0.5*0.5; total effect
+glm(Y ~ X, data = pipedat)
 
-glm(Y ~ X + Z, data = pipedat) # bX is zero; direct effect
+# bX is zero; direct effect
+glm(Y ~ X + Z, data = pipedat)
 
 ```
 
@@ -208,9 +225,11 @@ Z <- X*bX + Y*bY + rnorm(n, 0, 1)
 
 colldat <- data.frame(Y=Y, X=X, Z=Z)
 
-glm(Y ~ X, data = colldat) # bX is 0; X and Y non-associated
+# bX is 0; X and Y non-associated
+glm(Y ~ X, data = colldat)
 
-glm(Y ~ X + Z, data = colldat) # bX is non-zero; X and Y associated
+# bX is non-zero; X and Y associated
+glm(Y ~ X + Z, data = colldat)
 
 ```
 
@@ -239,44 +258,105 @@ This section riffs on -- and in a few ways goes slightly beyond -- Cinelli's Cra
 
 ## Take-homes
 
-There are many pedagogical resources that discuss in more depth the promises and pitfall of statistical adjustment for causal inference [e.g., @achen2005let; @cinelli2020crash; @lubke2020we; @rohrer2018thinking; @westreich2013table; @wysocki2022statistical]. But, for now, I focus on three critical take-home messages:
+There are many pedagogical resources that discuss in more depth the promises and pitfall of statistical adjustment for causal inference [e.g., @achen2005let; @cinelli2020crash; @lubke2020we; @rohrer2018thinking; @westreich2013table; @wysocki2022statistical]. But, for now, I focus on three critical take-home points:
 
-### The Table 2 fallacy
+### "The Table 2 fallacy"
 First, we have shown how multiple regression can be an effective alternative to randomization for blocking backdoor paths. This is a wonderful promise, since it allows us to study causal relationships that would not be feasible or ethical to study in a RCT context. It also allows us to decompose effects of interest, which is particularly relevant in mediation scenarios [e.g., total vs direct effect; for a technical but accessible introduction, see @wang2015g], as well estimating an unbiased causal effect even in the presence of unmeasured confounding, using a formula known as the *front-door criterion* (**to be discussed**). 
 
 However, when using statistical adjustment, we must tread with care. Just as statistical adjustment can block backdoor paths and thereby de-confound a true causal effect, statistical adjustment can induce bias, if we adjust for the wrong variables. We saw this in the pipe and collider examples: Adjusting for a mediator *blocks* a true causal effect, while adjusting for a collider *opens up* a non-causal path. A similar scenario, which we haven't discussed as of yet, is when a so-called *post-treatment* variable is adjusted for. Post-treatment bias can likewise mask a true causal effect (**to be discussed**).
 
 All of this entails that we cannot in general treat all regression coefficients as "causes" of the outcome. A statistical adjustment set (e.g., whether or not to include $Z$ in a regression) is built for a particular purpose and a particular set of causal assumptions (e.g., estimating the effect of $X$ on $Y$, adjusting for assumed confounder $Z$). This in turn means that we cannot expect that the variables used for statistical adjustment also represent a particular causal effect. For all we know, parts of the adjustment set might be a collider or a mediator on some other path in the causal graph, rendering a causal interpretation invalid. 
 
-This fundamental insight stands in contrast to common practice in many empirical sciences, where a table (often Table 2 of an empirical report) with all estimated regression coefficients is often presented -- implicitly or explicitly -- as equal causal effects. This is bad practice as it potentially misleads the reader to interpret coefficients of the control variables causally. Accordingly, this malpractice has been given a name, the "Table 2 Fallacy" [@westreich2013table], to raise awareness about the potential pitfalls.
+This fundamental insight stands in contrast to common practice in many empirical sciences, where a table (often Table 2 of an empirical report) with all estimated regression coefficients is often presented -- implicitly or explicitly -- as direct causal effects. This is a very unfortunate habit as it potentially misleads the reader to interpret coefficients of the control variables causally. Accordingly, to raise awareness about the potential pitfalls of this malpractice, it has been given a name, the "Table 2 Fallacy" [@westreich2013table].
 
-### Causes are not in the data
-Another critical take-home is that causes are not in the data. For instance, it's not possible from the data alone to distinguish between a pipe and a fork , because they have similar statistical implications. Therefore it follows that a DAG cannot be built on the basis of a set of regressions. Instead, regressions can be used to *test* the implications of a DAG or a set of DAGs [for a discussion of this point in the wild, @purzycki_coding_2022]. All this means that variable selection -- which variables to include in your adjustment set -- cannot be automated; it strictly requires prior knowledge and explicit causal assumptions [@hernan2020causal; @westreich2019epidemiology].
+### 100,000 regressions do not make for a causal estimate
+Another critical take-home is that causes are not in the data. For instance, it's not possible from the data alone to distinguish between a pipe and a fork, because they have similar statistical implications: In both cases, $X$ and $Y$ are associated, unless we condition on $Z$. But, for any given theory, whether $Z$ is thought of as a mediator or a confounder is often very different.
 
-### Average people vs. people on average
-In all but the simple cases, regression coefficients yield conditional effect estimates. The *average* person (conditional) vs. people *on average* (marginal). Y \~ X is the marginal estimate. But adjustment is critical for de-confounding. But, adjustment returns only conditional estimates (**to be discussed**).
+Therefore it follows that a DAG cannot be built on the basis of any number of regressions alone. Regressions are prediction engines, so regression coefficients only have a valid causal interpretation to the extent that identification assumptions hold. Instead, regressions can be used to *test* the implications of a particular DAG or set of DAGs [for discussion of this point in the wild, see @bendixen2023letter; @purzycki_coding_2022]. All this means that, at least in the context of an observational study where randomization was not feasible, variable selection -- which variables to include in your adjustment set -- cannot be automated; it strictly requires prior knowledge and explicit causal assumptions [@hernan2020causal; @westreich2019epidemiology].
 
-Enter g-methods.
+### Average people vs. people on average: Marginal and conditional effects
+The final take-home pertains to the difference between **marginal** and **conditional** estimates. Here's what I mean. 
 
-# *G*-methods and marginal effects
-As we saw above, multiple regression is a powerful tool for blocking backdoor paths. This allows for causal interpretation of the focal parameter(s) (but, importantly, *not* the control variables). However, regression has drawbacks that makes it insufficient for many common causal estimands, in particular when there are many covariates with complex relationships. Often, we're interested in marginal, not conditional, average treatment effects -- that is, average treatment effects in a population as a whole, not just subsets thereof. In more complicated data structures, such as longitudinal studies with dynamical relationships between treatment and outcome, regression alone will also fall short. In all these cases, we need a few additional tools in the trunk.
+In all but the simple cases, regression analysis yields conditional effect estimates. That is, the regression coefficient of interest is not the average effect for the whole sample but rather for a subset, conditional on the other variables in the model. To see this, consider the following simulation. 
 
-One such family of tools is known as **g-methods** -- *g* for *general* or *generalized* [@robins1986new]. Here, we'll focus on one g-method in particular, often referred to as g-computation [e.g. @snowden2011implementation; @ahern2009estimating] or **standardization** [e.g. @vansteelandt2011invited; @hernan2020causal, ch. 13], while we'll also very briefly introduce another method, known as **inverse probability of treatment weighting** (IPTW). Standardization and IPTW rely on the same assumptions and will yield similar if not identical results (indeed, in many simpler cases, they are mathematically identical), but they arrive at their results at quite different analytic routes.
+Say we randomize some marketing campaign $X$ but suspect that age $A$ might be modifying the effect of this intervention. The DAG would then be similar to figure \ref{dag2}; since we randomized $X$, $A$ cannot be a confounder, but we're interested in modeling $A$ anyway, because it could interact with the intervention in interesting ways (e.g., younger people might be more or less willing to be persuaded by the "once-in-a-lifetime offer!!" that we're launching). For the sake of interpretation, we're modeling age in a centered and standardized manner, with a mean of 0 and a standard deviation of 1.
 
-We focus primarily on standardization for a few reasons. First, since we want to perform our data analysis in a Bayesian framework, standardization is an obvious choice since the IPT weights are not obviously compatible with Bayes theorem [for some discussion see @robins2015bayesian; @saarela2015bayesian].
+```{r margcon}
+# inverse logit function
+logistic <- function(x) exp(x)/(1+exp(x))
 
-Second, compared to IPTW, standardization and its practical implementation seem to be often overlooked in popular text books and primers on causal inference and econometrics in the social and health sciences [e.g., @morgan2015counterfactuals; @pearl2016causal; @westreich2019epidemiology; @angrist2009mostly; @mcelreath_statistical_2020], although the latter stresses contrasts. It is discussed in [@hernan2020causal, ch. 13] but without explicit, reproducible practical/programming application, though there's a g-methods package). However, given its popularity, it's useful to at least be aware of the nuts and bolts of IPTW, too. So let's briefly present the two methods in turn.
+set.seed(123)
+
+n <- 1e3
+
+bX <- 1
+bA <- 1
+bXA <- 0.5
+
+A <- rnorm(n, 0, 1)
+X <- rbinom(n, 1, prob = 0.5)
+Y <- rbinom(n, 1, prob = logistic(-0.5 + X*bX + A*bA + X*A*bXA))
+
+model <- glm(Y ~ X * A, 
+             family = "binomial", 
+             data = data.frame(Y=Y, X=X, A=A))
+
+```
+
+Now, check the regression coefficient for $X$ in the `model` output. It's around `r round(bX,1)`. But consider now what this means. Very briefly put, in multiple regression, a coefficient represent the association of a given predictor to the outcome, when all other predictors are held at 0. The regression coefficient for $X$ represents therefore the effect of the intervention, *when age is held at 0*, that is at the average age. This is the **conditional** estimate: the intervention effect for an average-aged individual.
+
+However, often we wouldn't be interested in this quantity, the effect of an intervention at a very particular level of a covariate (a particular year of age, in this case). Perhaps we're interested in the effect of the intervention across a range of covariate values, but the regression coefficient for $X$ is still not directly getting us there. For instance, we could get predictions for the intervention's effect for up to $\pm2$ standard deviations of the mean age like so:
+
+```{r condpred, results='markup', dependson="margcon"}
+# X=0
+ndX0 <- data.frame(X=rep(0,5),
+                  A=c(-2,-1,0,1,2))
+
+estX0 <- predict(model, newdata = ndX0)
+
+# X=1
+ndX1 <- data.frame(X=rep(1,5),
+                  A=c(-2,-1,0,1,2))
+
+estX1 <- predict(model, newdata = ndX1)
+
+# Differences
+data.frame(A=c(-2,-1,0,1,2), effect=estX1 - estX0) |> 
+  mutate(effect = round(effect,1)) |>
+  head()
+
+```
+
+The resulting table is the predicted intervention `effect` across different age groups `A`, in log-odds. Note that when $A=0$, that's our regression coefficient for $X$.
+
+This is often a good start. But imagine we want to roll out the marketing campaign at scale in a population. In that scenario, as is often the case in applied cases, we're interested in the effect of the intervention in the sample *as a whole*, averaging over the distribution of age. This is the **marginal** estimate: the intervention effect for individuals on average.
+
+All of this is to say: there is an important distinction between making inferences for the *average* person (conditional) vs. people *on average* (marginal). 
+
+So there we have it. Our estimand is the marginal effect, but in moderately complex cases, where we're adjusting for covariates with potentially non-linear relationships, regression only yields conditional estimates. At the same time, adjustment for covariates is often critical for de-confounding, particularly in observational settings. So, what gives? Enter g-methods.
+
+# G-methods and marginal effects
+As we saw above, multiple regression is a powerful tool for blocking backdoor paths. This allows for causal interpretation of the focal parameter(s) (but, importantly, *not* the control variables). However, regression has drawbacks that makes it insufficient for many common causal estimands, in particular when there are many covariates with complex relationships. Often, we're interested in marginal, not conditional, treatment effects -- that is, treatment effects in a population as a whole, not just subsets thereof. In more complicated data structures, such as longitudinal studies with dynamical relationships between treatment and outcome, regression alone will also fall short. In all these cases, we need a few additional tools in the trunk.
+
+One such family of tools is known as **g-methods** -- *g* for *general* or *generalized* [@robins1986new]. Here, we'll focus on one g-method in particular, variously referred to as **g-computation** [e.g. @snowden2011implementation; @ahern2009estimating], **g-formula** and **standardization** [e.g. @vansteelandt2011invited; @hernan2020causal, ch. 13], while we'll also very briefly introduce another method, known as **inverse probability of treatment weighting** (IPTW). Standardization and IPTW rely on the same identification assumptions and will yield similar if not identical results (indeed, in many simpler cases, they are mathematically identical), but they arrive at their results at quite different analytic routes.
+
+We focus primarily on standardization for a few reasons. First, since we want to perform our more real-world data analysis in a Bayesian framework, standardization is an obvious choice since the IPT weights are not obviously compatible with Bayes theorem [for some discussion see @robins2015bayesian; @saarela2015bayesian].
+
+Second, compared to IPTW, standardization and its practical implementation seem to be often overlooked in popular text books and primers on causal inference and econometrics in the social and health sciences [e.g., @morgan2015counterfactuals; @pearl2016causal; @westreich2019epidemiology; @angrist2009mostly; @mcelreath_statistical_2020], although the latter stresses contrasts. It is discussed in [@hernan2020causal, ch. 13] but there's no explicit, reproducible practical/programming application, though there's a g-methods package. IPTW also does not handle interaction terms between a predictor and the outcome. 
+
+However, given its popularity, it's useful to at least be aware of the nuts and bolts of IPTW, too. So let's briefly present the two methods in turn.
 
 ## Inverse Probability Weighting
 
-Recall that the main aim of a covariate-adjusted analysis is to obtain conditional exchangeability: When we account for imbalances in covariates between treatment and control group, we say the two groups are exchangeable conditionally on the covariates. This means that the two groups are comparable such that if we detect a difference between the groups after the intervention, we can interpret that difference as a causal effect of the intervention.
+Recall that the main aim of a covariate-adjusted analysis is to obtain conditional exchangeability: When we account for imbalances in covariates between treatment and control group, we say the two groups are exchangeable conditionally on the covariates. This means that the two groups are comparable such that if we detect a difference between the groups after the intervention, we can interpret that difference as a causal effect of the intervention. Another way to think of obtaining exchangeability is as de-confounding.
 
-The IPTW method obtains conditional exchangeability by, in effect, creating a "pseudo-population" in which covariates are balanced between treatment and control. As the name hints at, this pseudo-population is created by estimating the probability of receiving the treatment conditional on covariates. This probability is then inverted and used as weights in a regression predicting the actual outcome of interest. In code, the procedure looks like this. First, we simulate a simple, confounded data structure, with a binary treatment $X$ with a coefficient of $\beta x$, binary confounder $Z$ and a continuous outcome $Y$.
+The IPTW method obtains conditional exchangeability by, in effect, creating a "pseudo-population" in which covariates are balanced between treatment and control. As the name hints at, this pseudo-population is created by estimating the probability of receiving the treatment conditional on covariates. This probability is then inverted and used as weights in a regression predicting the actual outcome of interest. 
+In code, the procedure looks like this. First, we simulate a simple, confounded data structure: a binary treatment $X$ with a coefficient of $\beta x$, binary confounder $Z$ and a continuous outcome $Y$.
 
 ```{r gsim}
 set.seed(123)
 
-n <- 1e4
+n <- 1e3
 
 bX <- 0.5 
 
@@ -291,13 +371,13 @@ Next, we calculate IPT weights by, first, fitting a model that regresses $X$ on 
 
 ```{r iptwtreat}
 # inverse logit function
-inv_logistic <- function(x) exp(x)/(1+exp(x))
+logistic <- function(x) exp(x)/(1+exp(x))
 
 # receiving treatment conditional on Z
 treat.mod <- glm(X ~ Z, data = gdat, family = "binomial")
 
 # probability of treatment
-gdat$pd <- predict(treat.mod) |> inv_logistic()
+gdat$pd <- predict(treat.mod) |> logistic()
 
 # compute inverse weights
 gdat$w <- with(gdat, ifelse(X==1, 1/pd, 1/(1-pd)))
@@ -316,7 +396,7 @@ There are at least two ways to improve on our simple IPTW workflow above. First,
 treat.mod.sw <- glm(X ~ 1, data = gdat, family = "binomial")
 
 # probability of treatment
-gdat$pn <- predict(treat.mod.sw) |> inv_logistic()
+gdat$pn <- predict(treat.mod.sw) |> logistic()
 
 # compute stabilized weights
 gdat$sw <- with(gdat, ifelse(X==1, pn/pd, pn/(1-pd)))
@@ -329,8 +409,6 @@ glm(Y ~ X, data = gdat, weights = sw)
 The other thing we can do to improve the workflow is to obtain a measure of uncertainty around our marginal estimate. However, since [**placeholder**], we can't rely on the standard error from our MSM. Instead, we must resort to **bootstrapping**, which involves running the same algorithmic routine $R$ times. This will result in a distribution of estimates with length $R$. Here's one way to implement bootstrapping with the stabilized weights.
 
 ```{r iptwboot}
-library(boot)
-
 # IPTW function
 iptw_fun <- function(formula, data, indices) {
   d <- data[indices,] 
@@ -344,7 +422,7 @@ iptw.result <- boot(
                 # set function
                 statistic=iptw_fun, # set function
                 # set R
-                R=1e3,
+                R=1e4,
                 # specify formula
                 formula=Y ~ X)
 
@@ -356,10 +434,26 @@ iptw.interval <- boot.ci(iptw.result,
                          type = "norm", 
                          index = 2)$normal
 
+```
+
+```{r iptwbootplot, dependson="iptwboot", echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+theme_set(theme_gray(base_size = 10) +
+            theme(panel.grid = element_blank(),
+                  axis.ticks.y = element_blank(),
+                  axis.text.y = element_blank()))
+
+data.frame(ATE = iptw.result[["t"]][,2]) |>
+  ggplot(aes(x = ATE)) +
+  stat_halfeye(point_interval = "mean_hdci", .width = 0.9) +
+  ylab(NULL) +
+  labs(title = "Bootstrapped IPTW",
+       subtitle = "Mean and 90% HDI in black")
 
 ```
 
-That's it for IPTW for now. They are popular and reasonably straightforward to implement. However, as mentioned, since there's no very clear way of obtaining uncertainty in the weights and then propagate that uncertainty to the MSM in a formal Bayesian framework, we leave IPTW here.
+That's it for IPTW for now. They are popular and reasonably straightforward to implement -- although practical issues remain [e.g., @austin2015moving]. For instance, what do to with extreme weights? Some suggest that extreme weights need to be truncated or trimmed at some threshold. This might work, although to me it seems somewhat unprincipled (e.g., what is an extreme weight anyway?).
+
+In any case, as mentioned, since there's no very clear way of obtaining uncertainty in the weights and then propagate that uncertainty to the MSM in a formal Bayesian framework, we leave IPTW here.
 
 ## Standardization
 
@@ -373,20 +467,19 @@ The conceptual steps in standardization are as follows:
 
 -   Duplicate the original data, set $X=0$ for all individuals, and then obtain predictions of the outcome using the fitted model holding covariate(s) $Z$ as observed $z$, $E[Y^{Z=z, X=0}]$.
 
--   Compute contrast corresponding to the estimand of interest, $E[Y^{X=1}] - E[Y^{X=0}]$.
+-   For each draw of the posterior distribution, compute contrast corresponding to the estimand of interest, $E[Y^{X=1}] - E[Y^{X=0}]$.
 
 In code, using Bayesian estimation with default priors via `Stan` and `brms`, the steps are these.
 
-```{r stand}
-library(brms)
-library(tidybayes)
-
+```{r standmod}
 # outcome model 
 stand.mod <- brm(Y ~ X + Z,
                  data = gdat, 
                  family = "gaussian", 
                  cores = 4)
+```
 
+```{r standproc, dependson="standmod"}
 # set X=1, Z=z
 X1 <- transform(gdat, X=1)
 
@@ -394,23 +487,55 @@ X1 <- transform(gdat, X=1)
 X0 <- transform(gdat, X=0)
 
 # E[Y{Z=z, X=1}]
-Y.x1 <- posterior_epred(stand.mod, X1)
+EX1 <- add_epred_draws(stand.mod, newdata = X1)
 
 # E[Y{Z=z, X=0}]
-Y.x0 <- posterior_epred(stand.mod, X0)
- 
+EX0 <- add_epred_draws(stand.mod, newdata = X0)
+
 # E[Y{X=1} - Y{X=0}]
-mean_hdci(Y.x1[,1] - Y.x0[,1])
+ate <- data.frame(X1 = EX1$.epred,
+                  X0 = EX0$.epred,
+                  draw = EX0$.draw) |> 
+  # for each posterior draw...
+  group_by(draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X1 - X0))
 
 ```
 
-The distribution of contrasts calculated in that final step are marginal estimates in that the two expectations $E[Y^{Z=z, X=1}]$ and $E[Y^{Z=z, X=0}]$ marginalize or average over the covariate(s) $Z$. We summarize the contrast by its posterior mean and HPDI, using the `tidybayes` package.
+The distribution of contrasts calculated in that final step are marginal estimates in that the two expectations $E[Y^{Z=z, X=1}]$ and $E[Y^{Z=z, X=0}]$ marginalize or average over the covariate(s) $Z$. We summarize the contrast by its posterior mean and 90% HPDI and plot the distribution against the bootstrapped IPTW, using the `tidybayes` package. Results are almost identical, although g-computation looks slightly more precise in this particular case.
+
+```{r standplot, dependson=c("iptwboot","standproc"), echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+theme_set(theme_gray(base_size = 10) +
+            theme(panel.grid = element_blank()))
+
+data.frame(ATE = c(ate$ate, iptw.result[["t"]][,2]),
+           type = c(rep("G-computation", length(ate$ate)), 
+                    c(rep("IPTW", length(iptw.result[["t"]][,2]))))) |>
+  ggplot(aes(x = ATE, y = type)) +
+  stat_halfeye(point_interval = "mean_hdci", .width = 0.9) +
+  ylab(NULL) +
+  labs(title = "G-computation vs. bootstrapped IPTW",
+       subtitle = "Posterior means and 90% HDIs in black")
+
+```
 
 When performing standardization in a frequentist setting, we'd have to resort to bootstrapping in order to obtain valid uncertainty around the contrast [see e.g. @snowden2011implementation], as with IPTW. However, in a Bayesian setting, we get uncertainty in one go, since the predicted values are valid posterior distributions of expectations.
 
-Okay, now that we have introduced g-methods in a very simple data context, we're ready to tackle more complex data structures where regression modeling alone falls short.
+One more thing: There's a fancy `R` package called `marginaleffects` that does all of this under the hood. Here's how:
 
-## Longitudinal analysis, time-varying treatments, doubly robust estimators
+```{r marginal effects}
+# marginaleffects solution
+library(marginaleffects)
+
+avg_comparisons(stand.mod, variables = "X")
+```
+
+It's certainly more compact but, for pedagogical purposes, we won't pursue this solution further here; black-boxing the computational steps might be convenient but it does very little to enhance understanding. It's useful to know about, however, if nothing else for double checking our results.
+
+Okay, now that we have introduced g-methods in a very simple data context, we're ready to tackle more complex data structures, where regression modeling alone falls short.
+
+## Longitudinal analysis and time-varying treatments
 
 For illustrating a longitudinal data context with time-varying treatment, we'll simulate from the DAG in figure \ref{dag-simpleg}. Suppose that our treatment $X$ is randomized but administered according to some time-varying covariate $Z$. We're interested in the *joint effects* of the treatment $X_0$ and $X_1$ on our outcome $Y$ (that is, the effects of each treatment on the outcome not through the subsequent treatment), denoted by the dashed edges.
 
@@ -443,9 +568,9 @@ But here's the issue: $Z_1$ is also a collider on the path $Y \leftarrow U \righ
 First, we simulate some data, under the model presented in figure \ref{dag-simpleg}. To keep things simple, we assume that the treatment, in fact, does not have any direct impact on $Y$ (i.e., we could delete the dashed edges), such that the true coefficients of $X_0$ and $X_1$ should be (roughly) zero.
 
 ```{r longsimplegdat}
-set.seed(9)
+set.seed(1)
 
-n <- 1e4
+n <- 2e4
 
 U <- rnorm(n, 0, 1)
 Z_0 <- rbinom(n, 1, 1/(1+exp(0.5)))
@@ -458,7 +583,7 @@ Y <- rnorm(n, 10 + U*2)
 lgdat <- data.frame(Y=Y, X_0=X_0, X_1=X_1, Z_0=Z_0, Z_1=Z_1, U=U)
 ```
 
-Then, we verify the chaos that $Z_1$ can havoc, if we haphazardly estimated the effect of $X_0$ on while adjusting for $Z_1$. The coefficient is solidly non-zero.
+Then, we verify the havoc that $Z_1$ can wreak, if we haphazardly estimated the effect of $X_0$ on while adjusting for $Z_1$. The coefficient is solidly non-zero.
 
 ```{r longnaivex0, dependson="longsimplegdat"}
 mx0 <- glm(Y ~ X_0 + Z_1, data = lgdat)
@@ -478,37 +603,76 @@ Then, we apply standardization to the data. The logic is the same as discussed a
 
 So, we first fit a model for the treatment at time point 0 and then compute the contrast in expectations between receiving and not receiving the treatment, $E[Y^{X_0=1, Z_0=z_0}] - E[Y^{X_0=0, Z_0=z_0}]$. Next, we fit a model for receiving treatment at time point 1 and similarly compute the contrast in expectations between receiving and not receiving the treatment, $E[Y^{X_1 = 1, X_0=x_0, Z_1=z_1}] - E[Y^{X_1=0, X_0=x_0, Z_1=z_1}]$.
 
-```{r longstand, dependson="longsimplegdat"}
+```{r longstandt0, dependson="longsimplegdat"}
 # Outcome model for X_0
 yX0model <- brm(Y ~ X_0 + Z_0, 
-                data = lgdat, cores = 4)
-
-# E[Y{X_0=1, Z_0=z_0}]
-yX0_1 <- posterior_epred(yX0model, newdata = transform(lgdat, X_0=1))
-
-# E[Y{X_0=0, Z_0=z_0}]
-yX0_0 <- posterior_epred(yX0model, newdata = transform(lgdat, X_0=0))
-
-# Contrast: E[Y{X_0=1}] - E[Y{X_0=0}] 
-yX0contrast <- mean_hdci((yX0_1[,1] - yX0_0[,1]))
-
-# Cutcome model for X_1
-yX1model <- brm(Y ~ X_0 + X_1 + Z_1, 
-                data = lgdat, cores = 4)
-
-# E[Y{X_1 = 1, X_0=x_0, Z_1=z_1}]
-yX1_1 <- posterior_epred(yX1model, newdata = transform(lgdat, X_0=1))
-
-# E[Y{X_1=0, X_0=x_0, Z_1=z_1}]
-yX1_0 <- posterior_epred(yX1model, newdata = transform(lgdat, X_0=0))
-
-# Contrast: E[Y{X_1=1}] - E[Y{X_1=0}]
-yX1contrast <- mean_hdci((yX1_1[,1] - yX1_0[,1]))
+                data = lgdat, 
+                cores = 4)
 ```
 
-By breaking the procedure down into separate models -- one for each time point and treatment -- we by-pass the problem that a single regression runs into, namely that $Z_1$ is both a collider and a confounder. The resulting contrasts, stored in `yX0contrast` and `yX1contrast`, are valid causal estimates of the joint effects of each treatment on the outcome, to the extent assumptions hold (we discuss these assumptions in the next section).
+```{r longstandt0proc, dependson=c("longstandt0", "longsimplegdat")}
+# E[Y{X_0=1, Z_0=z_0}]
+EX01 <- add_epred_draws(yX0model, newdata = transform(lgdat, X_0=1))
 
-Now for the finale. The above example comes from @hernan2020causal, and it's useful in that it illustrates how regression modeling alone breaks if our estimands require different adjustment sets (e.g., if a variable is both a confounder that we want to adjust for and a collider that we want to keep unadjusted).
+# E[Y{X_0=0, Z_0=z_0}]
+EX00 <- add_epred_draws(yX0model, newdata = transform(lgdat, X_0=0))
+
+# E[Y{X=1} - Y{X=0}]
+ateX_0 <- data.frame(X_01 = EX01$.epred,
+                     X_00 = EX00$.epred,
+                     draw = EX00$.draw) |> 
+  # for each posterior draw...
+  group_by(draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X_01 - X_00))
+
+```
+
+```{r longstandt1, dependson=c("longstand", "longsimplegdat")}
+# Outcome model for X_1
+yX1model <- brm(Y ~ X_0 + X_1 + Z_1, 
+                data = lgdat, cores = 4)
+```
+
+```{r longstandt1proc, dependson=c("longstandt1", "longsimplegdat")}
+# E[Y{X_0=1, Z_0=z_0}]
+EX11 <- add_epred_draws(yX1model, newdata = transform(lgdat, X_1=1))
+
+# E[Y{X_0=0, Z_0=z_0}]
+EX10 <- add_epred_draws(yX1model, newdata = transform(lgdat, X_1=0))
+
+# E[Y{X=1} - Y{X=0}]
+ateX_1 <- data.frame(X_11 = EX11$.epred,
+                     X_10 = EX10$.epred,
+                     draw = EX10$.draw) |> 
+  # for each posterior draw...
+  group_by(draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X_11 - X_10))
+```
+
+By breaking the procedure down into separate models -- one for each time point and treatment -- we by-pass the problem that a single regression runs into, namely that $Z_1$ is both a collider and a confounder. The resulting contrasts, stored in `ateX_0` and `ateX_1` and plotted below, are valid causal estimates of the joint effects of each treatment on the outcome (to the extent that the identification assumptions hold (we discuss these assumptions in the next section). 
+
+Recall that we simulated the joint effects as non-existing, so the contrasts should be around zero. They are not *exactly* centered on 0 due to sampling variability; we're only showing a single run of simulation and analysis here.
+
+
+```{r longstandplot, dependson=c("longstandt0proc","longstandt1proc"), echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+theme_set(theme_gray(base_size = 10) +
+            theme(panel.grid = element_blank()))
+
+data.frame(ATE = c(ateX_0$ate, ateX_1$ate),
+           type = c(rep("X_0", length(ateX_0$ate)),
+                    rep("X_1", length(ateX_1$ate)))) |>
+  ggplot(aes(x = ATE, y = type)) +
+  stat_halfeye(point_interval = "mean_hdci", .width = 0.9) +
+  ylab(NULL) +
+  xlim(c(-0.3,0.3)) +
+  labs(title = "Joint effects of X_0 and  X_1 on Y",
+       subtitle = "Posterior means and 90% HDIs in black")
+
+```
+
+Now for the finale. The DAG in Figure \ref{dag-simpleg} comes from @hernan2020causal, and it's useful in that it illustrates how regression modeling alone breaks if our estimands require different adjustment sets -- for instance, if a variable is both a confounder that we want to adjust for and a collider that we want to keep unadjusted.
 
 But let's take standardization for a spin in a real-world data analysis example. @vanderweele2016causal sets the stage for our example: religion and (mental) health.
 
@@ -570,7 +734,22 @@ First, we load the data, packages, and set the path to `cmdstan`, which helps sp
 ```{r veluxprep, eval = TRUE}
 veluxdat <- read.csv("velux_data.csv")
 
-d <- veluxdat[complete.cases(veluxdat[, !names(veluxdat) %in% c("religion_4")]),]
+velux <- veluxdat[complete.cases(veluxdat[, !names(veluxdat) %in% c("religion_4")]),]
+
+velux <- data.frame(
+  id,
+  R1 = religion_1,
+  R2 = religion_2,
+  R3 = religion_3,
+  H1 = health_1,
+  H2 = health_2,
+  H3 = health_3,
+  H4 = health_4,
+  G = gender,
+  A = age.c,
+  E = education
+   
+)
 
 library(cmdstanr)
 library(brms)
@@ -650,7 +829,7 @@ yr3_1 <- posterior_epred(r3model, newdata = transform(d, religion_3=4))
 
 ```
 
-The objects `yr1contrast`, `yr2contrast` and `yr3contrast` store the posterior means and HPDIs of the joint effects of religiosity on subjective health. You can inspect the contrasts to see that they huddle mostly around zero, meaning that we find little evidence for the notion that religion on average works as a protective factor during the pandemic, at least in these data.
+The objects `yr1contrast`, `yr2contrast` and `yr3contrast` store the posterior means and HPDIs of the joint effects of religiosity on subjective health. You can inspect the contrasts to see that they huddle mostly around zero, meaning that we find little evidence for the notion that religion on average works as a protective factor during the pandemic: At least in these (self-reported) data, religious individuals were not more or less healthy.
 
 One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardisation in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation.
 
@@ -664,7 +843,7 @@ First, we assume that the potential outcomes under varying levels of exposure ar
 
 Second, and relatedly, we assume *no model misspecification*, which entails that our model is specified correctly (e.g., in terms of functional relationships, no omitted confounding variables, etc.). However, whether any given statistical model and adjustment sets are sufficient to ensure these conditions hold is generally not empirically testable.
 
-Third, and similarly, we assume that our variables are *measured without error*, another difficult-to-verify assumption.
+Third, and similarly, we assume that our variables are *measured without error*, another difficult-to-verify assumption, unless there are known sources of measurement error.
 
 Fourth, we assume that an individual's observed outcome under a given exposure is equivalent to the potential outcome that would've been observed under that exposure (*counterfactual consistency*). In other words, in the context of our g-computation procedure, when we obtain expected values for participants setting $X = x$, we assume that we obtain the values that we in fact would've observed, if those participants had been observed under $X = x$.
 
@@ -672,13 +851,30 @@ Fifth, we assume *positivity*, which implies that individuals have similar expos
 
 Sixth, and more trivially, we assume temporal ordering of relevant variables, for instance such that exposures and mediating variables occur before an outcome.
 
+# Missing data
+Causal inference is fundamentally a missing data problem. All real-world analyses are marred by missingness one way or the other. In the most basic sense, this directly relates to what we above called the fundamental problem of causal inference: We're always missing the counter-factual, so we impute it through assumption-laden estimation or by finding an appropriate comparison group.
+
+But even setting this issue aside, and even if any particular dataset is "complete", that dataset will almost always only represent a sample from a bigger population. Often, it's the population, not the sample, that we're interested in making inferences about. So in that light, we are missing data on most of the population of interest. Add to this the very plausible scenarios that our sample might not be a random subset of the population, that some of our variables are measured with error, or that our statistical models fail to capture key aspects of the data-generating process. These a tough but inevitable realizations. But all hope is not lost.
+
+A comprehensive overview of data analysis in the presence of missing data is obviously outside the scope of this brief primer. Instead, I want to give a compact run down of ways to think about missing data and some practical pointers to handling it.
+
+## Missing (completely) at random
+
+## Missing not at random
+
+![**"Missing not at random" in action**. If you run a survey study, you'll rarely hear from people who don't want to participate in survey studies.](sampling_bias_meme.png){#id .class width=40% height=40%}
+
+\newpage
+
 # To do:
+
+- Plot results in a simple style
 
 -   double check notation throughout -- within-document consistency and external consistency with e.g., What if? book
 
--   add references
-
 -   a little bit more formal detail on the IPTW weights and the difference btw. unstabilized and stabilized weigths and why we can't rely on the standard errors (and therefore must resort to bootstrapping)
+
+- doubly robust estimators
 
 -   Missing data MCAR, MAR, MNAR. See Morris et al. (2022, appendix) for discussion of missingness in X and/or Y in the context of g-comp.
 
@@ -701,7 +897,7 @@ See end of Standardization chapter in What if?
 
 -   Econometric techniques
 
-Regression discontinuity, instrumental variables, synthetic controls
+Regression discontinuity, diff-in-diff, instrumental variables, synthetic controls
 
 -   Threats to identification and some solutions
 
@@ -717,7 +913,9 @@ D-separation, Do-calculus,
 
 -   Principles for randomized trials/experiments
 
-Adjusting for covariates?
+Adjusting for covariates? Fixed effects or multilevel modeling? Randomization strata? 
+
+- Per-protocol vs. as-treated vs. intention to treat [see e.g. @hernan2020causal, ch. 22]
 
 # Appendix: Velux IPTW
 
