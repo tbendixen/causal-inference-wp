@@ -719,7 +719,7 @@ The DAG could look something like figure \ref{dagvelux}.
 ```
 $C$ is a set of baseline covariates comprising standard demographics, including age, gender, income and education; the indefinite arrows indicate confounding on all observed variables). Our exposure $R_{1-4}$ represent level of religiosity ("How important is religion to you?", measured on a 1 ("not at all important") to 4 ("very important") scale.) measured at four time points, and $H_{1-4}$ are subjective general health ("How would you describe your current health?", measured on a 1 ("very bad") to 5 ("very good") scale.), a set of time-varying covariates. Note the complex causal relationships across time between $R$ and $H$.
 
-To provide some background, this dataset comes from a panel study on a pseudo-representative sample of Danes during the COVID-19 pandemic (for more detail, see Mauritsen et al., *in review*). As investigators, we are interested in assessing whether religiosity was a protective factor in terms of subjective general well-being in the context of the stress and uncertainty of a pandemic. If that was so, we'd expect a positive effect of religiosity on subjective health.
+To provide some background, this dataset comes from a panel study on a pseudo-representative sample of Danes during the COVID-19 pandemic [for more detail, see @mauritsen_bendixen_christensen_2022]. As investigators, we are interested in assessing whether religiosity was a protective factor in terms of subjective general well-being in the context of the stress and uncertainty of a pandemic. If that was so, we'd expect a positive effect of religiosity on subjective health.
 
 Suppose, then, that our estimand of interest is the contrast in subjective well-being at the final measurement time (that is, $Y=H_4$) between being "maximally religious" $Y^{R_1=R_2=R_3=4}$ and being "minimally religious" $Y^{R_1=R_2=R_3=1}$. That is, we're interested in the *joint effects* of being religious on health at all time points up to the final measurement, meaning partitioning the respective effects of religiosity level at each time point on the outcome, *except those running through the subsequent measurements of religiosity*.
 
@@ -894,17 +894,70 @@ Sixth, and more trivially, we assume temporal ordering of relevant variables, fo
 # Missing data
 Causal inference is fundamentally a missing data problem. All real-world analyses are marred by missingness one way or the other. In the most basic sense, this directly relates to what we above called the fundamental problem of causal inference: We're always missing the counter-factual, so we impute it through assumption-laden estimation or by finding an appropriate comparison group.
 
-But even setting this issue aside, and even if any particular dataset is "complete", that dataset will almost always only represent a sample from a bigger population. Often, it's the population, not the sample, that we're interested in making inferences about. So in that light, we are missing data on most of the population of interest. Add to this the very plausible scenarios that our sample might not be a random subset of the population, that some of our variables are measured with error, or that our statistical models fail to capture key aspects of the data-generating process. These a tough but inevitable realizations. But all hope is not lost.
+But even setting this issue aside, and even if any particular dataset is "complete," that dataset will almost always only represent a sample from a bigger population. Often, it's the population, not the sample, that we're interested in making inferences about. So in that light, we are missing data on most of the population of interest. 
+
+Add to this the very plausible scenarios that our sample might not be a random subset of the population, that some of our variables are measured with error, or that our statistical models fail to capture key aspects of the data-generating process. These a tough but inevitable considerations. But all hope is not lost.
 
 A comprehensive overview of data analysis in the presence of missing data is obviously outside the scope of this brief primer. Instead, I want to give a compact run down of ways to think about missing data and some practical pointers to handling it.
 
-## Bayesian imputation: Missing (completely) at random
+As touched upon just above, we'll distinguish between missingness relating to **internal** validity (i.e., is our treatment effect estimate unbiased in the sample?) and **external** validity (i.e., is our treatment effect estimate unbiased in the target population?) [@lesko2017generalizing]. 
 
-## Sampling bias: Poststratification
+## External validity: Sampling selection bias
+Once again, DAGs can help structure our thinking. Say we're interested in estimating the effect of a health intervention on some outcome (Figure \ref{extdag}). Consider too that, even if we randomize the treatment assignment -- i.e., there's no arrows pointing into "Treatment" -- our sample might not reflect the target population that we're ultimately interested in. When it comes to external validity, we're interested in not only backdoor paths between the treatment and the outcome but also between the outcome and the sampling indicator ("Sampled" in Figure \ref{extdag}). Here, there is such a path, through "Health seeking". That is, if you're on the lookout for treatment of some ailment, you're probably more likely to both enroll in a health study and also have health conditions that are different from non-health seeking individuals [@westreich2019epidemiology, p. 208-209].
+
+We box the "Sampled" node to emphasize that we've conditioned on the sampled individuals. This is similar to how we condition on variables by statistical adjustment, only here the conditioning happens at the design or sampling stage. 
+
+```{=tex}
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \node (x) at (-2,1) {Treatment};
+        \node (z) at (0,2) {Health seeking};
+        \node (y) at (2,1) {Outcome};
+        \node [state,rectangle] (s) at (-3,2) {Sampled $= 1$};
+        \path (z) edge (y);
+        \path (x) edge (y);
+        \path (z) edge (s);
+    \end{tikzpicture}
+    \caption{\textbf{Sampling selection bias}. There's an open backdoor from the outcome to the sampling indicator.}
+    \label{extdag}
+\end{figure}
+```
+
+But it's not only in the health sciences that such causal structures tend to crop up. Consider, say, survey studies in general [@schuessler_selb_2019]. On the most basic level, if you plan to run a survey study, you shouldn't expect to hear from people who really don't want to participate in survey studies.
+
+![**Sampling selection bias**. If you run a survey study, you'll rarely hear from people who don't want to participate in survey studies.](sampling_bias_meme.png){#id .class width=40% height=40%}
+
+Once you're habituated to thinking about external validity -- or "sampling selection bias", to use another fancy term -- this way, you'll see it everywhere. To give just one example, a recent survey study aimed at estimating how widespread spiritual needs are in the general Danish population [@stripp2023spiritual]. This was an impressive data collection effort in that they drew a random population-based sample of over 100,000 adult Danes, which was then linked up with national register-based data. This representative sample of Danes then received an invitation to participate in a survey. According to the invitation, the survey would include questions about existential and spiritual matters, such as "satisfaction with life", "meaning" and "faith". One in four responded.
+
+Setting aside important definitional quibbles about "spirituality," here's the catch: What if people's spiritual-mindedness influences the likelihood that they respond to a survey on spirituality [@mauritsenbendixenspirituality]? Then we have a scenario as in Figure \ref{spiritdag}, where people self-select into the study based on their (non-)spiritual inclinations. This in turn means that we're sampling based on the outcome of interest and that the sample therefore no longer is representative of the target population.
+
+```{=tex}
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \node (x) at (-2,1) {Demography};
+        \node (z) at (0,2) {Spirituality};
+        \node (y) at (2,1) {Spiritual needs};
+        \node [state,rectangle] (s) at (-3,2) {Sampled $= 1$};
+        \path (z) edge (y);
+        \path (x) edge (z);
+        \path (x) edge (y);
+        \path (z) edge (s);
+    \end{tikzpicture}
+    \caption{\textbf{"Spiritual needs are common among Danes, who respond to surveys on spiritual needs"}. Sampling selection bias in the wild.}
+    \label{spiritdag}
+\end{figure}
+```
+
+This is unfortunate but there are actually ways 
+
+### Generalizability, Transportability, Poststratification
+
+## Bayesian imputation: Missing (completely) at random
 
 ## Missing not at random
 
-![**"Missing not at random" in action**. If you run a survey study, you'll rarely hear from people who don't want to participate in survey studies.](sampling_bias_meme.png){#id .class width=40% height=40%}
 
 \newpage
 
@@ -961,7 +1014,6 @@ rNAmod <- brm(H4miss ~ mo(R1) + mo(R2) + mo(R3),
                       family = "bernoulli",
                       cores = 4)
 ```
-
 
 
 See end of Standardization chapter in What if?
