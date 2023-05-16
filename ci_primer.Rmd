@@ -10,6 +10,7 @@ output:
   pdf_document:
     number_sections: true
     toc: true
+    toc_depth: 3
 bibliography: [wp-bib.bib]
 ---
 
@@ -32,6 +33,8 @@ library(tidybayes)
 library(boot)
 library(brms)
 library(tidybayes)
+library(tidyr)
+library(cmdstanr)
 
 memory.limit(size=56000)
 
@@ -356,13 +359,13 @@ In code, the procedure looks like this. First, we simulate a simple, confounded 
 ```{r gsim}
 set.seed(123)
 
-n <- 1e3
+n <- 2e3
 
 bX <- 0.5 
 
 Z <- rbinom(n, 1, 0.3)
-X <- rbinom(n, 1, 0.4+Z*0.5)
-Y <- rnorm(n, 10 + X*0.5 + Z*0.5)
+X <- rbinom(n, 1, 0.4 + Z*0.5)
+Y <- rnorm(n, 10 + X*bX + Z*0.5)
 
 gdat <- data.frame(Y=Y, X=X, Z=Z)
 ```
@@ -875,7 +878,7 @@ One last comment, before we move on: In our estimation above, we silently cut so
 
 In the next section, we discuss assumptions that are required for a causal interpretation of estimates obtained via standardization and IPTW.
 
-## It's assumptions all the way down
+## It's assumptions all the way down{#assumptions}
 
 Causal inference in an observational setting generally requires several key conditions for a causal interpretation of the main exposure [e.g. @hernan2020causal, ch. 13; @naimi2017introduction]. One way to think of this exercise is that when assumptions are (assumed) satisfied, an observational study will have emulated a randomized study.
 
@@ -889,7 +892,9 @@ Fourth, we assume that an individual's observed outcome under a given exposure i
 
 Fifth, we assume *positivity*, which implies that individuals have similar exposure levels within all confounder levels. While this is empirically unlikely to hold in particular (for instance, when we have several covariates, including continuous ones, several groups, etc.), lack of positivity can be ignored to the extent that we're willing to assume that estimates for the strata with zero observations can be extrapolated from the model fitted on the observed strata [@hernan2020causal, p. 162].
 
-Sixth, and more trivially, we assume temporal ordering of relevant variables, for instance such that exposures and mediating variables occur before an outcome.
+Sixth, we assume no-interference, such that the potential outcomes of an individual is assumed to be unaffected by the treatment assignment of other individuals (also known as "the stable unit treatment value assumption" (SUTVA)).
+
+Seventh, and more trivially, we assume temporal ordering of relevant variables, for instance such that exposures and mediating variables occur before an outcome.
 
 # Missing data
 Causal inference is fundamentally a missing data problem. All real-world analyses are marred by missingness one way or the other. In the most basic sense, this directly relates to what we above called the fundamental problem of causal inference: We're always missing the counter-factual, so we impute it through assumption-laden estimation or by finding an appropriate comparison group.
@@ -900,7 +905,7 @@ Add to this the very plausible scenarios that our sample might not be a random s
 
 A comprehensive overview of data analysis in the presence of missing data is obviously outside the scope of this brief primer. Instead, I want to give a compact run down of ways to think about missing data and some practical pointers to handling it.
 
-As touched upon just above, we'll distinguish between missingness relating to **internal** validity (i.e., is our treatment effect estimate unbiased in the sample?) and **external** validity (i.e., is our treatment effect estimate unbiased in the target population?) [@lesko2017generalizing]. 
+As touched upon just above, we'll distinguish between missingness relating to **external** validity (i.e., is our treatment effect estimate unbiased in the target population?) and **internal** validity (i.e., is our treatment effect estimate unbiased in the sample?) [@lesko2017generalizing]. 
 
 ## External validity: Sampling selection bias
 Once again, DAGs can help structure our thinking. Say we're interested in estimating the effect of a health intervention on some outcome (Figure \ref{extdag}). Consider too that, even if we randomize the treatment assignment -- i.e., there's no arrows pointing into "Treatment" -- our sample might not reflect the target population that we're ultimately interested in. When it comes to external validity, we're interested in not only backdoor paths between the treatment and the outcome but also between the outcome and the sampling indicator ("Sampled" in Figure \ref{extdag}). Here, there is such a path, through "Health seeking". That is, if you're on the lookout for treatment of some ailment, you're probably more likely to both enroll in a health study and also have health conditions that are different from non-health seeking individuals [@westreich2019epidemiology, p. 208-209].
@@ -924,40 +929,465 @@ We box the "Sampled" node to emphasize that we've conditioned on the sampled ind
 \end{figure}
 ```
 
-But it's not only in the health sciences that such causal structures tend to crop up. Consider, say, survey studies in general [@schuessler_selb_2019]. On the most basic level, if you plan to run a survey study, you shouldn't expect to hear from people who really don't want to participate in survey studies.
+But it's not only in the health sciences that such causal structures tend to crop up. Consider, say, survey studies in general [@schuessler_selb_2019]. On the most basic level, if you plan to run a survey study, you shouldn't expect to hear from people who really don't want to participate in survey studies (Figure \ref{fig:meme}).
 
-![**Sampling selection bias**. If you run a survey study, you'll rarely hear from people who don't want to participate in survey studies.](sampling_bias_meme.png){#id .class width=40% height=40%}
+![**Sampling selection bias**. If you run a survey study, you'll rarely hear from people who don't want to participate in survey studies.](sampling_bias_meme.png){#fig:meme .class width=40% height=40%}
 
-Once you're habituated to thinking about external validity -- or "sampling selection bias", to use another fancy term -- this way, you'll see it everywhere. To give just one example, a recent survey study aimed at estimating how widespread spiritual needs are in the general Danish population [@stripp2023spiritual]. This was an impressive data collection effort in that they drew a random population-based sample of over 100,000 adult Danes, which was then linked up with national register-based data. This representative sample of Danes then received an invitation to participate in a survey. According to the invitation, the survey would include questions about existential and spiritual matters, such as "satisfaction with life", "meaning" and "faith". One in four responded.
+Once you're habituated to thinking about external validity -- or "sampling selection bias", to use another fancy term -- this way, you'll see it everywhere. To give just one example, a recent survey study aimed at estimating how widespread spiritual needs are in the general Danish population [@stripp2023spiritual]. This was an impressive data collection effort in that the researchers drew a random population-based sample of over 100,000 adult Danes, which was then linked up with national register-based data. This representative sample of Danes then received an invitation to participate in a survey. According to the invitation, the survey would include questions about existential and spiritual matters, such as "satisfaction with life", "meaning" and "faith". One in four responded.
 
-Setting aside important definitional quibbles about "spirituality," here's the catch: What if people's spiritual-mindedness influences the likelihood that they respond to a survey on spirituality [@mauritsenbendixenspirituality]? Then we have a scenario as in Figure \ref{spiritdag}, where people self-select into the study based on their (non-)spiritual inclinations. This in turn means that we're sampling based on the outcome of interest and that the sample therefore no longer is representative of the target population.
+Setting aside important definitional quibbles about what we even mean by "spirituality," here's the catch [as discussed in @mauritsenbendixenspirituality]: What if people's spiritual needs influence the likelihood that they respond to a survey on existential and spiritual matters? Then we have a scenario as in Figure \ref{spiritdag}, where people self-select into the study based not only on their demographic characteristics but also on their (non-)spirituality. This in turn means that we're sampling on the outcome of interest and that the sample is therefore no longer representative of the target population.
 
 ```{=tex}
 \begin{figure}
     \centering
     \begin{tikzpicture}
         \node (x) at (-2,1) {Demography};
-        \node (z) at (0,2) {Spirituality};
         \node (y) at (2,1) {Spiritual needs};
-        \node [state,rectangle] (s) at (-3,2) {Sampled $= 1$};
-        \path (z) edge (y);
-        \path (x) edge (z);
+        \node [state,rectangle] (s) at (0,2) {Sampled $= 1$};
+        \path (y) edge (s);
+        \path (x) edge (s);
         \path (x) edge (y);
-        \path (z) edge (s);
     \end{tikzpicture}
     \caption{\textbf{"Spiritual needs are common among Danes, who respond to surveys on spiritual needs"}. Sampling selection bias in the wild.}
     \label{spiritdag}
 \end{figure}
 ```
 
-This is unfortunate but there are actually ways 
+When the outcome is associated with the sampling indicator, as in Figure \ref{spiritdag}, there is no straightforward way to obtain an unbiased estimate of the population-level distribution of the outcome -- unless we're willing to make strong (and often unverifiable) assumptions about the exact sampling mechanisms at hand. That's the bad news.
+
+But there are good news, too. Under less restrictive causal structures, we can in fact recover a population estimate even if our sample is only partially or not at all overlapping with the population of interest. We'll tackle an applied case in the next section.
 
 ### Generalizability, Transportability, Poststratification
+As we saw above, whether an empirical estimate from one sample can be generalized to another population depends on explicit causal assumptions. These assumptions can be encoded in DAGs [e.g., @pearl2022external; @deffner2022causal; @schuessler_selb_2019]. If the outcome of interest is associated with sampling, we've selected on our outcome and there's little we can do, without further assumptions (think of Figure \ref{spiritdag}). However, if we can break the association between the sampling indicator and the outcome through statistical adjustment, there's hope.
+
+Figure \ref{transportdag} shows one such example. Say we're interested in estimating the effect of an experimental prosociality prime on choice in an behavioral economic game across different field sites. The study and data come from @house2020universal and the analysis example from @deffner2022causal.
+
+We suspect that our outcome is associated with sampling through age. This scenario could arise for at least two main reasons. First, different field sites may simply have different underlying demographic compositions, such that for instance one population is older or younger than the other. In this case, and assuming our sample is a sufficiently large random sample of each field, our sample estimates will reflect the true population distributions. If we're only interested in the empirical differences between our sampled populations, no further action is needed.
+
+But what if different sampling procedures caused our samples to differ in age? Perhaps some field researchers sampled children more than adults, because they were primarily interested in developmental aspects of prosociality. Indeed, children were preferentially sampled by @house2020universal. In that case, we cannot simply compare the empirical population differences, because our sample is not a random sample of the target populations. We need a statistical procedure -- so-called **poststratification** -- to adjust for such a scenario.
+
+```{=tex}
+\begin{figure}
+    \centering
+    \begin{tikzpicture}
+        \node (x) at (-2,1) {Prime};
+        \node (y) at (2,1) {Prosociality};
+        \node (a) at (0,2) {Age};
+        \node [state,rectangle] (s) at (-3,2) {Sampled $= 1$};
+        \path (a) edge (y);
+        \path (x) edge (y);
+        \path (a) edge (s);
+    \end{tikzpicture}
+    \caption{\textbf{Transportability example}.}
+    \label{transportdag}
+\end{figure}
+```
+
+In general, poststratification involves three main steps [@kennedy2021know]:
+
+- Fit a theoretically informed statistical model on the sample adjusting for relevant variables to block backdoor paths between the outcome and exposure and the outcome and sampling indicator.
+
+- Source external data on the demographic composition of a target population (e.g., census data).
+
+- Obtain predictions from the fitted model and reweight the fitted values with weights computed from the external target population data.
+
+In the following, we'll go through each step using as an illustrative example, adapted from @house2020universal and @deffner2022causal.
+
+#### Fit statistical model
+First, we prepare the data from @house2020universal. There were three experimental priming conditions but we look at only two here -- "Generous" and "Selfish" -- and a binary outcome, where the "Prosocial choice" $= 1$. Age ranges from 4-15 years but is recoded to a 1-12 range for practical indexing purposes (see source document for data preparation).
+
+```{r houseprep, echo=FALSE}
+#Load the data from House et al., 2020
+data <- read.csv("Model_6a_6b_6c_6d_data.csv")
+
+#Create new variable for experimental condition and round ages
+data$condition <- sapply(1:nrow(data), function(x) which(c(data$CONDITION_1_1yes[x],data$CONDITION_2_1yes[x],data$CONDITION_3_1yes[x]) == 1 ))
+data <- data[,c("SUBJECT_ID","GENDER_1female","fieldid","AGE_in_years","condition","T1_choice_1yes")]
+data$choice <- data$T1_choice_1yes
+data$T1_choice_1yes <- NULL
+data$age <- round(data$AGE_in_years)
+data$gender <- data$GENDER_1female + 1
+
+#Exclude data from "both ok", we focus on comparison between "Generous" and "Selfish" conditions
+data <- subset(data, data$condition != 3)
+
+#Prepare data list as input for Stan 
+d_list <- list(pop_id = as.factor(data$fieldid),       #Numerical field id (1=Berlin, 2=La Plata, 3=Phoenix, 4=Pune, 5=Shuar, 6=Wiichi)
+               age = data$age - 3,                     #We recode age, which ranges from 4-15 in the data, to 1-12 to make indexing easier
+               condition = as.factor(data$condition-1),#Dummy code conditions
+               outcome = data$choice,                  #Dictator game choice
+               gender = as.factor(data$GENDER_1female))
+
+str(d_list)
+```
+
+Then, we fit a statistical model that adjusts for priming condition and age. Now, this model is a little bit more involved than previous models. Since these complications pertain more to estimation than causality *per se*, I'll just very briefly break it down bit by bit and include references for further reading. I'll also use default priors here, although in an applied case, we'd want to think carefully about defining appropriate prior distributions and checking their implications.
+
+```{r housemodel}
+model <- brm(outcome ~ 1 + condition*mo(age) + (1 + condition*mo(age) | pop_id),
+             family = bernoulli,
+             data = d_list,
+             cores = 4, iter = 1000)
+
+```
+
+First, since the outcome is binary, we use logistic (Bernoulli) regression, `family = bernoulli` [@mcelreath_statistical_2020, ch. 11]. This means that we're predicting the probability of choosing the prosocial option, conditionally on the covariates. Second, we interact priming condition and age (indicated by the `*`), as we're interested in how age modifies the effect of priming [@mcelreath_statistical_2020, ch. 8]. That is, is priming more influential in certain age groups? Third, we model age with *monotonic effects* (indicated by `mo()`). This allows for a more flexible relationship between age and the outcome. Specifically, each year of age is allowed to have its own differential effect on the outcome, while assuming shared directionality across all age groups [@burkner_modelling_2020; @mcelreath_statistical_2020, ch. 12]. Finally, we're allowing each field site to have its own intercept and slope to capture cultural-specific factors, `(... | pop_id)`. This multilevel specification ensures that each field site is simultaneously *informing* and *informed by* all other field sites, making for more stable predictions, particularly for groups and combinations of covariates with few data points [@mcelreath_statistical_2020, ch. 13-14]. For this reason, multilevel modeling is often combined with poststratification [@kennedy2021know].
+
+#### Source external data
+Next step in our poststratification procedure is to settle on an appropriate target population and obtain external data on that population. Since we're not guided by any particular theoretical research program here, we'll simply follow @deffner2022causal and poststratify to the Wichí in the sample, an indigenous group of Argentina. 
+
+```{r censusdisplay, echo=FALSE, results='markup'}
+model$data |>
+  
+  # calculate number of individuals in each age group and site
+  group_by(as.factor(pop_id), as.factor(age), .drop = F) |>
+  summarise(Frequency = n()) |>
+  ungroup() |>
+  
+  # rename columns
+  rename("pop_id" = "as.factor(pop_id)",
+         "Age" = "as.factor(age)") |>
+  
+  # select only Wichi (target pop)
+  filter(pop_id == 6) |>
+  
+  # get proportions for each combination of demographic variables
+  mutate(Proportion = round(Frequency/sum(Frequency), 2),
+         pop_id = NULL) |>
+  ungroup() |> 
+  knitr::kable(caption = "Census-like data format for the Wichí.", align = "c", booktabs = TRUE) |> 
+  kableExtra::row_spec(0, bold = TRUE)
+```
+
+Another perhaps more common situation is that we want poststratification to a more representative population. We could then look for census data for this general population of interest. For European countries, one could use Eurostat[^es], which is a datahub for European census data. US census data are also readily available[^us]. 
+
+[^es]: https://ec.europa.eu/eurostat/databrowser/view/EDAT_LFS_9901__custom_5352473/default/table?lang=en
+
+[^us]: https://usa.ipums.org/usa/index.shtml
+
+Returning to our present analysis, we arrange the Wichí data in a format that resembles census data (Table \ref{tab:censusdisplay}). Census data are often structured such that, for each combination of demographic variables of interests, we get the population frequency or proportion. Once we've calculated the proportional age distribution for the Wichí, we copy that to the remaining sites.
+
+```{r censusprep}
+# data resembling census format
+psw <- model$data |>
+  
+  # calculate number of individuals in each age group and site
+  group_by(as.factor(pop_id), as.factor(age), .drop = F) |>
+  summarise(freq = n()) |>
+  ungroup() |>
+  
+  # rename columns
+  rename("pop_id" = "as.factor(pop_id)",
+         "age" = "as.factor(age)") |>
+  
+  # select only Wichi (target pop)
+  filter(pop_id == 6) |>
+  
+  # get proportions for each combination of demographic variables
+  mutate(prop = freq/sum(freq)) |>
+  ungroup() |>
+  
+  # copy age proportions to all other sites
+  mutate(pop_id = NULL,
+         age = as.integer(age)) |>
+  expand_grid(pop_id = as.factor(1:6))
+
+```
+
+#### Obtain and reweight fitted values
+Finally, we obtain predictions from the fitted model and reweigh the fitted values with weights computed from the external target population data in the previous code chunk. For computing counterfactual predictions and marginal effects, we follow the -- by now -- familiar g-computation workflow from above.
+
+```{r marginaltransport}
+# set X=1, Z=z
+psX1 <- expand_grid(psw, condition=1)
+
+# set X=0, Z=z
+psX0 <- expand_grid(psw, condition=0)
+
+# E[Y{Z=z, X=1}]
+psEX1 <- add_epred_draws(model, newdata = psX1,
+                         value = "estimate") |>
+  
+  # weight predictions with ps weights
+  mutate(estimate_prop = estimate*prop) |> 
+  
+  # for each draw and site, sum up weighted predictions
+  group_by(pop_id, .draw) |>
+  summarise(estimate_sum = sum(estimate_prop)) |> 
+  rename(.epred = estimate_sum)
+
+# E[Y{Z=z, X=0}]
+psEX0 <- add_epred_draws(model, newdata = psX0,
+                         value = "estimate") |>
+  
+  # weight predictions with ps weights 
+  mutate(estimate_prop = estimate*prop) |> 
+  
+  # for each draw and site, sum up weighted predictions
+  group_by(pop_id, .draw) |>
+  summarise(estimate_sum = sum(estimate_prop)) |> 
+  rename(.epred = estimate_sum)
+
+# E[Y{X=1} - Y{X=0}]
+poststratified_ate <- data.frame(X1 = psEX1$.epred,
+                                 X0 = psEX0$.epred,
+                               draw = psEX0$.draw,
+                             pop_id = psEX0$pop_id) |> 
+  # for each posterior draw and site...
+  group_by(pop_id, draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X0 - X1))
+```
+
+Finally, we plot the estimates. However, when working with poststratification, it's often useful to have another, non-poststratified estimate to plot against. This allows us to assess the impact of the poststratification procedure on our inferences.
+
+We calculate such a simplified model in the following code chunk and obtain marginal effects of the priming condition for each site. Then, in the next code cunk, we plot the two results against each other.
+
+```{r fixmod}
+# Empirical estimate
+fixmod <- brm(outcome ~ 1 + condition*pop_id,
+              family = bernoulli,
+              data = d_list,
+              cores = 4, iter = 1000, 
+              backend = "cmdstan")
+
+# set X=1, Z=z
+X1 <- transform(d_list, condition=1)
+
+# set X=0, Z=z
+X0 <- transform(d_list, condition=0)
+
+# E[Y{Z=z, X=1}]
+EX1 <- add_epred_draws(fixmod, newdata = X1, value = ".epred")
+
+# E[Y{Z=z, X=0}]
+EX0 <- add_epred_draws(fixmod, newdata = X0, value = ".epred")
+
+# E[Y{X=1} - Y{X=0}]
+sample_ate <- data.frame(X1 = EX1$.epred,
+                         X0 = EX0$.epred,
+                       draw = EX0$.draw,
+                     pop_id = EX0$pop_id) |> 
+  # for each posterior draw and site...
+  group_by(pop_id, draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X0 - X1))
+```
+
+```{r transportcompare, fig.align = 'center', fig.width=6, fig.height=3, fig.cap="Poststratification example."}
+# Combine and compare the two sets of estimates with an indicator for poststratified
+poststratified_ate$ps <- "Poststratified"
+sample_ate$ps <- "Empirical"
+compare <- rbind(sample_ate, 
+                 poststratified_ate) |> 
+  mutate(ps = as.factor(ps))
+
+# facet labels
+pop_label <- c("Berlin (GER)",
+               "La Plata (ARG)",
+               "Phoenix (USA)", 
+               "Pune (IND)", 
+               "Shuar (ECU)", 
+               "Wichí (ARG)")
+names(pop_label) <- 1:6
+
+# plot!
+compare |> 
+  ggplot(aes(x = ate, group = ps, color = ps, fill = ps)) +
+  facet_wrap(~ pop_id, 
+             labeller = labeller(pop_id = pop_label)) +
+  geom_line(aes(y=after_stat(scaled)), alpha = 0.5, size = 2, stat = "density") +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  scale_fill_manual(values = c("gray40", "#3182BD")) +
+  scale_color_manual(values = c("gray40", "#3182BD")) +
+  theme_test(base_size = 8) +
+  theme(axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.y=element_blank()) +
+  ylab(NULL) +
+  xlab("Effect of prime on prosocial choice in dictator game") +
+  labs(title = "Empirical vs. Poststratified estimates (census weights-approach)",
+       subtitle = "Poststratied to the Wichí") +
+  guides(color=guide_legend(title=NULL))
+
+```
+As it turns out, the poststratified estimates do differ somewhat from the empirical estimates, except for Wichí (Figure \ref{fig:transportcompare}). This is not surprising since, after all, we poststratified to the age distribution of Wichí. In all other sites but for Phoenix (USA), the poststratified effect is larger than the empirical estimates. For Phoenix, it's smaller. 
+
+#### Summary: Simulating counterfactual populations
+It might be helpful at this point to stop and consider what we've actually achieved here. The empirical estimates are the average treatment effects in the sample for each site. However, we suspect that the effects across field sites might differ both because of unobserved cultural factors and because of different sampling procedures. So, we conduct a counterfactural experiment: *What if all field sites had an age distribution identical to the Wichí?* This procedure, in effect, holds age constant such that the residual variation in the treatment effect that might still exist between sites can now only be due to site-specific cultural factors -- of course, given the usual identification assumptions. 
+
+To think of poststratification this way -- as a counterfactual demographic experiment -- follows neatly in line with the potential outcomes framework that we introduced in the beginning of this primer. There, we used potential outcomes to identify an average treatment effect, simulating counterfactual exposures to treatment. In the poststratification procedure, we instead simulate counterfactual demographic compositions that might modify the outcome of interest. This makes for a powerful workflow for *estimating* a treatment effect in a sample and *generalizing* that effect to a population of interest.
+
+#### Assumptions and caveats 
+The workflow presented above is, of course, simplified to drive home both the conceptual and practical points. However, it's easily scaleable. For instance, say we wanted to not only look at age but also gender. Assuming gender is measured in-sample, we simply include gender in the model, calculate the proportion of the target population with all possible combinations of age and gender, and use those proportions to weight model predictions. In the source document, I show a complete example.
+
+```{r transportbonus, eval=FALSE, echo=FALSE}
+### Include gender
+model <- brm(outcome ~ 1 + condition*mo(age) + condition*gender + (1 + condition*mo(age) + condition*gender | pop_id),
+             family = bernoulli,
+             data = d_list,
+             cores = 4, iter = 1000, 
+             backend = "cmdstan")
+
+# data resembling census format
+psw <- model$data |>
+  
+  # calculate number of individuals in each gender/age group and site
+  group_by(as.factor(pop_id), as.factor(age), as.factor(gender), .drop = F) |>
+  summarise(freq = n()) |>
+  ungroup() |>
+  
+  # rename columns
+  rename("pop_id" = "as.factor(pop_id)",
+         "age" = "as.factor(age)",
+         "gender" = "as.factor(gender)") |>
+  
+  # select only Wichi (target pop)
+  filter(pop_id == 6) |>
+  
+  # get proportions for each combination of demographic variables
+  mutate(prop = freq/sum(freq)) |>
+  ungroup() |>
+  
+  # copy age proportions to all other sites
+  mutate(pop_id = NULL,
+         age = as.integer(age)) |>
+  expand_grid(pop_id = as.factor(1:6))
+
+# set X=1, Z=z
+psX1 <- expand_grid(psw, condition=1)
+
+# set X=0, Z=z
+psX0 <- expand_grid(psw, condition=0)
+
+# E[Y{Z=z, X=1}]
+psEX1 <- add_epred_draws(model, newdata = psX1,
+                         value = "estimate") |>
+  
+  # weight predictions with ps weights
+  mutate(estimate_prop = estimate*prop) |> 
+  
+  # for each draw and site, sum up weighted predictions
+  group_by(pop_id, .draw) |>
+  summarise(estimate_sum = sum(estimate_prop)) |> 
+  rename(.epred = estimate_sum)
+
+# E[Y{Z=z, X=0}]
+psEX0 <- add_epred_draws(model, newdata = psX0,
+                         value = "estimate") |>
+  
+  # weight predictions with ps weights 
+  mutate(estimate_prop = estimate*prop) |> 
+  
+  # for each draw and site, sum up weighted predictions
+  group_by(pop_id, .draw) |>
+  summarise(estimate_sum = sum(estimate_prop)) |> 
+  rename(.epred = estimate_sum)
+
+# E[Y{X=1} - Y{X=0}]
+poststratified_ate <- data.frame(X1 = psEX1$.epred,
+                                 X0 = psEX0$.epred,
+                                 draw = psEX0$.draw,
+                                 pop_id = psEX0$pop_id) |> 
+  # for each posterior draw and site...
+  group_by(pop_id, draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X0 - X1))
+
+# Combine and compare the two sets of estimates with an indicator for poststratified
+poststratified_ate$ps <- "Poststratified"
+sample_ate$ps <- "Empirical"
+compare <- rbind(sample_ate, 
+                 poststratified_ate) |> 
+  mutate(ps = as.factor(ps))
+
+# facet labels
+pop_label <- c("Berlin (GER)","La Plata (ARG)","Phoenix (USA)", "Pune (IND)", "Shuar (ECU)", "Wichí (ARG)")
+names(pop_label) <- 1:6
+
+# plot!
+compare |> 
+  ggplot(aes(x = ate, group = ps, color = ps, fill = ps)) +
+  facet_wrap(~ pop_id, 
+             labeller = labeller(pop_id = pop_label)) +
+  geom_line(aes(y=after_stat(scaled)), alpha = 0.5, size = 2, stat = "density") +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  scale_fill_manual(values = c("gray40", "#3182BD")) +
+  scale_color_manual(values = c("gray40", "#3182BD")) +
+  theme_test(base_size = 8) +
+  theme(axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.y=element_blank()) +
+  ylab(NULL) +
+  xlab("Effect of prime on prosocial choice in dictator game") +
+  labs(title = "Empirical vs. Poststratified estimates (census weights-approach)",
+       subtitle = "Poststratied to the Wichí, for both age and gender") +
+  guides(color=guide_legend(title=NULL))
+
+```
+
+Second, if -- as is the case in our working example -- we have access to individual-level data, and not census-like aggregated data, for the target population, we can simplify the computational workflow somewhat. Instead of calculating proportions and weights, we simply assemble a data frame with the individual-level data of the target population. We then use that data frame to get fitted values from our model and calculate marginal effects, as usual. I leave it to the reader to verify that this approach yields identical results to our census-like approach above.
+
+```{r psbonus, eval=F}
+### Poststratification with individual-level data
+
+# Filter for target population...
+target_pop <- model$data[model$data[["pop_id"]]==6,] |>
+  # ... and then copy target age distribution to all other sites
+  mutate(pop_id = NULL) |>
+  expand_grid(pop_id = as.factor(1:6))
+
+# set X=1, Z=z in target population
+psX1 <- transform(target_pop, condition=1)
+
+# set X=0, Z=z in target population
+psX0 <- transform(target_pop, condition=0)
+
+# E[Y{Z=z, X=1}]
+psEX1 <- add_epred_draws(model, newdata = psX1, value = ".epred")
+
+# E[Y{Z=z, X=0}]
+psEX0 <- add_epred_draws(model, newdata = psX0, value = ".epred")
+
+# E[Y{X=1} - Y{X=0}]
+poststratified_ate <- data.frame(X1 = psEX1$.epred,
+                                 X0 = psEX0$.epred,
+                               draw = psEX0$.draw,
+                             pop_id = psEX0$pop_id) |> 
+  # for each posterior draw and site...
+  group_by(pop_id, draw) |>
+  # ... calculate ATE
+  summarise(ate = mean(X0 - X1))
+```
+
+Another important point to emphasize is that our poststratified estimates are only valid under certain assumptions. As it turns out, identification assumptions for internal validity, as discussed in Section \ref{assumptions}, have counterparts to identification assumptions for external validity. Quoting from @lesko2017generalizing, we assume that:
+
+- "The participants included in the study sample are exchangeable with members of the target population who were not sampled, perhaps conditional on pre-treatment characteristics W (conditional exchangeability between those sampled and those not sampled)"
+
+- "Within strata of W, all subjects in the target population have some non-zero probability of being selected into the sample (analogous to positivity)"
+
+- "The same distribution of versions of treatment [are administered] in the study sample and the target population"
+
+- "[There is] no interference in the target population and the study sample (although these results can be extended to scenarios where the pattern of interference is the same in the target population and the study sample)" (similar to "the stable unit treatment value assumption").
+
+- "We assume no measurement error [and] also require correct model(s) specification for any parametric or semi-parametric models used to describe associations between covariates and outcome or any models used to describe the sampling mechanism"
+
+In a final quote, @lesko2017generalizing sums up the connection between internal and external validity as follows:
+
+>"Assumptions sufficient for identification of a causal effect in the target population may, at first glance, look similar to those required for identification of a causal effect in the study sample. However, assumptions about the relationships between the potential outcomes and the sampling mechanism are sufficient for external validity, compared to the case of internal validity for which assumptions about the relationships between the potential outcomes and the treatment assignment mechanism are sufficient. As assumptions sufficient for internal validity are met in expectation when treatment is randomized, assumptions sufficient for external validity will be met in expectation if the study sample is a simple random sample of the target population."
+
+To connect these insights to our working example, consider that in Figure \ref{transportdag}, we assumed that the exposure of interest -- the prime -- was experimentally manipulated. This meant that we didn't have to worry about backdoor paths between the outcome and exposure: Assuming perfect randomization, perfect measurement and no model misspecification, our estimate therefore represents a valid causal estimate in the sample and -- to the extent that \ref{transportdag} captures the true causal structure of sampling -- in the population of interest. 
+
+However, in observational settings, we'd have to worry about those backdoor paths, too. Our poststratified estimate will only have a valid causal interpretation, if the in-sample estimate is identified. Conversely, if we're using poststratification but our poststratification adjustment misses key variables, our poststratified estimate will arguably be worse than the empirical estimate, which at least holds in-sample (under satisfied internal validity assumptions) [@schuessler_selb_2019].
+
+#### Generalizability vs. transportability: What's the difference?
+According to @lesko2017generalizing:
+
+>"Generalizability is concerned with making inference from a possibly biased sample of the target population back to the full target population (including the study sample), while transportability concerns making inference for a target population when the study sample and the target population are partially or completely non-overlapping."
 
 ## Bayesian imputation: Missing (completely) at random
 
 ## Missing not at random
-
 
 \newpage
 
