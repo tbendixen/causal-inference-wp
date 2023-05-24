@@ -12,6 +12,6 @@ Topics (to be) covered:
 - Conditional vs. marginal effects
 - G-methods and longitudinal analysis
 - Missing data and other threats to identification
-- Transportability
+- Poststratification, generalizability and transportability
 - Econometric techniques
 - .. and more!
