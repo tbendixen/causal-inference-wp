@@ -35,6 +35,7 @@ library(brms)
 library(tidybayes)
 library(tidyr)
 library(cmdstanr)
+library(kableExtra)
 
 memory.limit(size=56000)
 
@@ -907,7 +908,7 @@ A comprehensive overview of data analysis in the presence of missing data is obv
 
 As touched upon just above, we'll distinguish between missingness relating to **external** validity (i.e., is our treatment effect estimate unbiased in the target population?) and **internal** validity (i.e., is our treatment effect estimate unbiased in the sample?) [@lesko2017generalizing]. 
 
-## External validity: Sampling selection bias
+## External validity
 Once again, DAGs can help structure our thinking. Say we're interested in estimating the effect of a health intervention on some outcome (Figure \ref{extdag}). Consider too that, even if we randomize the treatment assignment -- i.e., there's no arrows pointing into "Treatment" -- our sample might not reflect the target population that we're ultimately interested in. When it comes to external validity, we're interested in not only backdoor paths between the treatment and the outcome but also between the outcome and the sampling indicator ("Sampled" in Figure \ref{extdag}). Here, there is such a path, through "Health seeking". That is, if you're on the lookout for treatment of some ailment, you're probably more likely to both enroll in a health study and also have health conditions that are different from non-health seeking individuals [@westreich2019epidemiology, p. 208-209].
 
 We box the "Sampled" node to emphasize that we've conditioned on the sampled individuals. This is similar to how we condition on variables by statistical adjustment, only here the conditioning happens at the design or sampling stage. 
@@ -1036,29 +1037,6 @@ First, since the outcome is binary, we use logistic (Bernoulli) regression, `fam
 #### Source external data
 Next step in our poststratification procedure is to settle on an appropriate target population and obtain external data on that population. Since we're not guided by any particular theoretical research program here, we'll simply follow @deffner2022causal and poststratify to the Wichí in the sample, an indigenous group of Argentina. 
 
-```{r censusdisplay, echo=FALSE, results='markup'}
-model$data |>
-  
-  # calculate number of individuals in each age group and site
-  group_by(as.factor(pop_id), as.factor(age), .drop = F) |>
-  summarise(Frequency = n()) |>
-  ungroup() |>
-  
-  # rename columns
-  rename("pop_id" = "as.factor(pop_id)",
-         "Age" = "as.factor(age)") |>
-  
-  # select only Wichi (target pop)
-  filter(pop_id == 6) |>
-  
-  # get proportions for each combination of demographic variables
-  mutate(Proportion = round(Frequency/sum(Frequency), 2),
-         pop_id = NULL) |>
-  ungroup() |> 
-  knitr::kable(caption = "Census-like data format for the Wichí.", align = "c", booktabs = TRUE) |> 
-  kableExtra::row_spec(0, bold = TRUE)
-```
-
 Another perhaps more common situation is that we want poststratification to a more representative population. We could then look for census data for this general population of interest. For European countries, one could use Eurostat[^es], which is a datahub for European census data. US census data are also readily available[^us]. 
 
 [^es]: https://ec.europa.eu/eurostat/databrowser/view/EDAT_LFS_9901__custom_5352473/default/table?lang=en
@@ -1094,8 +1072,31 @@ psw <- model$data |>
 
 ```
 
+```{r censusdisplay, echo=FALSE, results='markup'}
+model$data |>
+  
+  # calculate number of individuals in each age group and site
+  group_by(as.factor(pop_id), as.factor(age), .drop = F) |>
+  summarise(Frequency = n()) |>
+  ungroup() |>
+  
+  # rename columns
+  rename("pop_id" = "as.factor(pop_id)",
+         "Age" = "as.factor(age)") |>
+  
+  # select only Wichi (target pop)
+  filter(pop_id == 6) |>
+  
+  # get proportions for each combination of demographic variables
+  mutate(Proportion = round(Frequency/sum(Frequency), 2),
+         pop_id = NULL) |>
+  ungroup() |> 
+  knitr::kable(caption = "Census-like data format for the Wichí.", align = "c", booktabs = TRUE) |> 
+  kableExtra::row_spec(0, bold = TRUE)
+```
+
 #### Obtain and reweight fitted values
-Finally, we obtain predictions from the fitted model and reweigh the fitted values with weights computed from the external target population data in the previous code chunk. For computing counterfactual predictions and marginal effects, we follow the -- by now -- familiar g-computation workflow from above.
+Finally, we obtain predictions from the fitted model and reweigh the fitted values with the weights (i.e., proportions) computed from the external target population data in the previous code chunk. For computing counterfactual predictions and marginal effects, we follow the -- by now -- familiar g-computation workflow from above.
 
 ```{r marginaltransport}
 # set X=1, Z=z
@@ -1139,9 +1140,9 @@ poststratified_ate <- data.frame(X1 = psEX1$.epred,
   summarise(ate = mean(X0 - X1))
 ```
 
-Finally, we plot the estimates. However, when working with poststratification, it's often useful to have another, non-poststratified estimate to plot against. This allows us to assess the impact of the poststratification procedure on our inferences.
+Finally, we plot the estimates. When working with poststratification, it's often useful to have alternative, non-poststratified estimates to plot against. This allows us to assess the impact of the poststratification procedure on our inferences.
 
-We calculate such a simplified model in the following code chunk and obtain marginal effects of the priming condition for each site. Then, in the next code cunk, we plot the two results against each other.
+We calculate such a simplified model in the following code chunk and obtain marginal effects of the priming condition for each site. Then, in the next code chunk, we plot the two results against each other.
 
 ```{r fixmod}
 # Empirical estimate
@@ -1211,15 +1212,17 @@ compare |>
   guides(color=guide_legend(title=NULL))
 
 ```
-As it turns out, the poststratified estimates do differ somewhat from the empirical estimates, except for Wichí (Figure \ref{fig:transportcompare}). This is not surprising since, after all, we poststratified to the age distribution of Wichí. In all other sites but for Phoenix (USA), the poststratified effect is larger than the empirical estimates. For Phoenix, it's smaller. 
+As it turns out (Figure \ref{fig:transportcompare}), the "poststratified estimates" do differ somewhat from the "empirical estimates", except for Wichí. This is not surprising since, after all, we poststratified to the age distribution of Wichí. In all other sites but for Phoenix (USA), the poststratified effect is larger than the empirical estimates. For Phoenix, it's smaller. This is because all other sites are nudged toward the Wichí estimate, which is around an 0.5, and only Phoenix's empirical estimate is above that.
 
-#### Summary: Simulating counterfactual populations
-It might be helpful at this point to stop and consider what we've actually achieved here. The empirical estimates are the average treatment effects in the sample for each site. However, we suspect that the effects across field sites might differ both because of unobserved cultural factors and because of different sampling procedures. So, we conduct a counterfactural experiment: *What if all field sites had an age distribution identical to the Wichí?* This procedure, in effect, holds age constant such that the residual variation in the treatment effect that might still exist between sites can now only be due to site-specific cultural factors -- of course, given the usual identification assumptions. 
+#### Taking stock: Simulating counterfactual populations
+It might be helpful at this point to pause for a moment and consider what we've actually achieved here. The empirical estimates are the average treatment effects *in the sample* for each site. However, we suspect that the in-sample effects across field sites might differ *from the population effects* both because of unobserved cultural factors and because of different sampling procedures. So, we conduct a counterfactural experiment: *What if all field sites had an age distribution identical to the Wichí?* This procedure, in effect, holds age constant such that the residual variation in the treatment effect that might still exist between sites can now only be due to site-specific cultural factors -- of course, given the usual identification assumptions. 
 
-To think of poststratification this way -- as a counterfactual demographic experiment -- follows neatly in line with the potential outcomes framework that we introduced in the beginning of this primer. There, we used potential outcomes to identify an average treatment effect, simulating counterfactual exposures to treatment. In the poststratification procedure, we instead simulate counterfactual demographic compositions that might modify the outcome of interest. This makes for a powerful workflow for *estimating* a treatment effect in a sample and *generalizing* that effect to a population of interest.
+To think of poststratification this way -- as a counterfactual demographic experiment -- follows neatly in line with the potential outcomes framework that guides this primer. Throughout, we've used potential outcomes to identify an average treatment effect, simulating counterfactual exposures to treatment. In the poststratification procedure, we instead simulate counterfactual demographic compositions that might modify the outcome of interest. This makes for a powerful workflow for *estimating* a treatment effect in a sample and *generalizing* that effect to a population of interest. 
 
-#### Assumptions and caveats 
-The workflow presented above is, of course, simplified to drive home both the conceptual and practical points. However, it's easily scaleable. For instance, say we wanted to not only look at age but also gender. Assuming gender is measured in-sample, we simply include gender in the model, calculate the proportion of the target population with all possible combinations of age and gender, and use those proportions to weight model predictions. In the source document, I show a complete example.
+Sometimes, these two estimands are referred to, respectively, as the **sample average treatment effect (SATE)** and the **(population) average treatment effect (ATE)** (Figure \ref{tab:atetab}). So far in this primer, we've computed only the SATE. But, our sample is not a random subset of the population of interest, poststratification is strictly needed to get at the (P)ATE.
+
+#### Extensions, assumptions and caveats 
+The workflow presented above is, of course, simplified to drive home both the conceptual and computational points. However, it's easily scaleable. For instance, say we wanted to not only look at age but also gender. Assuming gender is measured in-sample, we simply include gender in the model, calculate the proportions of the target population with all possible combinations of age and gender from external data, and use those proportions to weight model predictions. In the source document, I show a complete example.
 
 ```{r transportbonus, eval=FALSE, echo=FALSE}
 ### Include gender
@@ -1326,7 +1329,7 @@ compare |>
 
 ```
 
-Second, if -- as is the case in our working example -- we have access to individual-level data, and not census-like aggregated data, for the target population, we can simplify the computational workflow somewhat. Instead of calculating proportions and weights, we simply assemble a data frame with the individual-level data of the target population. We then use that data frame to get fitted values from our model and calculate marginal effects, as usual. I leave it to the reader to verify that this approach yields identical results to our census-like approach above.
+Second, if -- as is the case in our working example -- we have access to individual-level data, and not census-like aggregated data, for the target population, we can simplify the computational workflow somewhat. Instead of calculating proportions as weights, we simply assemble a data frame with the individual-level data of the target population. We then use that data frame to get fitted values from our model and calculate marginal effects, as usual. Below, I show this modified procedure but leave it to the reader to verify that this approach yields identical results to our census-like approach above.
 
 ```{r psbonus, eval=F}
 ### Poststratification with individual-level data
@@ -1376,18 +1379,45 @@ In a final quote, @lesko2017generalizing sums up the connection between internal
 
 >"Assumptions sufficient for identification of a causal effect in the target population may, at first glance, look similar to those required for identification of a causal effect in the study sample. However, assumptions about the relationships between the potential outcomes and the sampling mechanism are sufficient for external validity, compared to the case of internal validity for which assumptions about the relationships between the potential outcomes and the treatment assignment mechanism are sufficient. As assumptions sufficient for internal validity are met in expectation when treatment is randomized, assumptions sufficient for external validity will be met in expectation if the study sample is a simple random sample of the target population."
 
-To connect these insights to our working example, consider that in Figure \ref{transportdag}, we assumed that the exposure of interest -- the prime -- was experimentally manipulated. This meant that we didn't have to worry about backdoor paths between the outcome and exposure: Assuming perfect randomization, perfect measurement and no model misspecification, our estimate therefore represents a valid causal estimate in the sample and -- to the extent that \ref{transportdag} captures the true causal structure of sampling -- in the population of interest. 
+To connect these insights to our working example, consider that in Figure \ref{transportdag}, we assumed that the exposure of interest -- the prime -- was experimentally manipulated. This meant that we didn't have to worry about backdoor paths between the outcome and exposure: Assuming perfect randomization, perfect measurement and no model misspecification, our estimate therefore represents a valid causal estimate in the sample and -- to the extent that Figure \ref{transportdag} captures the true causal structure of sampling -- in the population of interest. 
 
-However, in observational settings, we'd have to worry about those backdoor paths, too. Our poststratified estimate will only have a valid causal interpretation, if the in-sample estimate is identified. Conversely, if we're using poststratification but our poststratification adjustment misses key variables, our poststratified estimate will arguably be worse than the empirical estimate, which at least holds in-sample (under satisfied internal validity assumptions) [@schuessler_selb_2019].
+However, in observational settings, we'd have to worry about those backdoor paths, too. Our poststratified estimate will only have a valid causal interpretation, if the in-sample estimate is identified. Conversely, if we're using poststratification but our poststratification adjustment misses key variables, our poststratified estimate will arguably be worse than the empirical estimate, which at least holds in-sample, given satisfied internal validity assumptions [@schuessler_selb_2019].
 
 #### Generalizability vs. transportability: What's the difference?
 According to @lesko2017generalizing:
 
 >"Generalizability is concerned with making inference from a possibly biased sample of the target population back to the full target population (including the study sample), while transportability concerns making inference for a target population when the study sample and the target population are partially or completely non-overlapping."
 
-## Bayesian imputation: Missing (completely) at random
+```{r atetab, echo=FALSE, results='markup'}
+data.frame(Effect = c("ATE (population average treatment effect)",
+                      "SATE (sample average treatment effect)",
+                      "ITT (population intention to treat effect)",
+                      "SITT (sample intention to treat effect)",
+                      "ATT (population average treatment effect on treated)",
+                      "SATT (sample average treatment effect on the treated)",
+                      "LATE (population local average treatment effect",
+                      "SLATE (sample local average treatment effect",
+                      "ITE (individual treatment effect)"),
+           Description = c(rep("Average",2),
+                           rep("Average among units assigned to treatment",2),
+                           rep("Average among the actual treated",2),
+                           rep("Average among the compliers",2),
+                           "Indvidual unit effect"),
+           Target = c(rep(c("Population","Sample"), 4),
+                            "Unit")) |> 
+  knitr::kable(caption = "Overview of some treatment effects.", align = "l", booktabs = TRUE) |> 
+  kableExtra::row_spec(0, bold = TRUE)
+```
 
-## Missing not at random
+## Internal validity
+In the previous section, we focused on external validity. That is, what can we do about the fact that our sample will almost always only be a subset -- and often a *non-random* one -- of the population of interest. In other words, most of the data will be missing most of the time.
+We could term this *unit missingness* -- we're missing data on entire units (e.g., individuals). 
+
+But, above and beyond unit missingness, we'll also very often have missing values certain variables for even sampled units -- *variable missingness*. This kind of missingness is what most people think of as missing data. And it is indeed ubiquitous. But as with unit missingness, there are principled strategies for thinking about variable missingness that in turn can guide analysis. The key idea here too is that we aim for the missing values to be conditionally exchangeable with the observed values. For this purpose, we'll again use DAGs and missingness indicators to encode our assumptions about the data-generating process [@thoemmes2015graphical].  
+
+### Missing (completely) at random
+
+### Missing not at random
 
 \newpage
 
