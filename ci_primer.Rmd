@@ -55,11 +55,11 @@ Without further ado, let's dive in.
 
 We said just above that the causal effect of an event is the difference between what actually happened and the counter-factual. But here immediately the Fundamental Problem of causal inference comes crashing down at our feet: We can never observe the counter-factual!
 
-We can never re-play history or anything of the sort. For instance, we can never give a medical treatment to a patient and also *not* give the treatment to said patient. The counter-factual outcome is often missing. Causal inference is, then, fundamentally a missing data problem.
+We can never re-play history or anything of the sort. For instance, we can never give a medical treatment to a patient and also *not* give the treatment to said patient. The counter-factual outcome is often missing. Causal inference is, then, fundamentally a missing data problem [@ding2018causal].
 
-So, the best we can do is to *infer* the counter-factual by estimation, approximation or informed (hopefully) guesswork and contrast that with the observed state. More precisely, the best we can do is to aim at an **average treatment effect** or variants thereof. An average treatment effect of, say, a medical treatment is the difference in outcomes under receiving the treatment vs. not receiving the treatment not within an individual, like the individual treatment effect, but instead *between* individuals. Further, these individuals have to be similar enough in relevant characteristics such that, whatever the difference in outcome between the treatment and no treatment groups is, in fact, explained by the treatment alone, and not by some other events or characteristics.
+So, the best we can do is to *infer* the counter-factual by estimation, approximation or informed (hopefully) guesswork and contrast that with the observed state. More precisely, the best we can do is to aim at an **average treatment effect** or variants thereof. An average treatment effect of, say, a medical treatment is the difference in outcomes under receiving the treatment vs. not receiving the treatment not within an individual [although see e.g., @MuellerPearl+2023] but instead *between* individuals. Further, these individuals have to be similar enough in relevant characteristics such that, whatever the difference in outcome between the treatment and no treatment groups is, in fact, explained by the treatment alone, and not by some other events or characteristics.
 
-This, in a nutshell, is the fundamental problem of causal inference. It's simple. Deceptively so, because the real world is a mess. So we have assumptions to make. But in return we get something quite extraordinary: A rigorous, tried-and-tested workflow for thinking about cause-and-effect-relationships.
+This, in a nutshell, is the fundamental problem of causal inference. It's simple. Deceptively so, because the real world is a mess. So we have assumptions to make. But in return we get something quite extraordinary: A rigorous, tried-and-tested workflow for thinking about cause-and-effect relationships.
 
 The fundamental problem of causal inference, then, is also a *promise*: A promise that, if we're careful, honest, and transparent, we might actually get causal answers to the questions that matter most in life. Or, alternatively, we'll be told that there exist no valid answers to the questions we posed. Either is a very valuable yield.
 
@@ -333,7 +333,7 @@ data.frame(A=c(-2,-1,0,1,2), effect=estX1 - estX0) |>
 
 The resulting table is the predicted intervention `effect` across different age groups `A`, in log-odds. Note that when $A=0$, that's our regression coefficient for $X$.
 
-This is often a good start. But imagine we want to roll out the marketing campaign at scale in a population. In that scenario, as is often the case in applied cases, we're interested in the effect of the intervention in the sample *as a whole*, averaging over the distribution of age. This is the **marginal** estimate: the intervention effect for individuals on average.
+This is a start. But imagine we want to roll out the marketing campaign at scale in a population. In that scenario, as is often the case in applied cases, we're interested in the effect of the intervention in the sample *as a whole*, averaging over the distribution of age. This is the **marginal** estimate: the intervention effect for individuals on average.
 
 All of this is to say: there is an important distinction between making inferences for the *average* person (conditional) vs. people *on average* (marginal). 
 
@@ -355,6 +355,7 @@ However, given its popularity, it's useful to at least be aware of the nuts and 
 Recall that the main aim of a covariate-adjusted analysis is to obtain conditional exchangeability: When we account for imbalances in covariates between treatment and control group, we say the two groups are exchangeable conditionally on the covariates. This means that the two groups are comparable such that if we detect a difference between the groups after the intervention, we can interpret that difference as a causal effect of the intervention. Another way to think of obtaining exchangeability is as de-confounding.
 
 The IPTW method obtains conditional exchangeability by, in effect, creating a "pseudo-population" in which covariates are balanced between treatment and control. As the name hints at, this pseudo-population is created by estimating the probability of receiving the treatment conditional on covariates. This probability is then inverted and used as weights in a regression predicting the actual outcome of interest. 
+
 In code, the procedure looks like this. First, we simulate a simple, confounded data structure: a binary treatment $X$ with a coefficient of $\beta x$, binary confounder $Z$ and a continuous outcome $Y$.
 
 ```{r gsim}
@@ -440,7 +441,7 @@ iptw.interval <- boot.ci(iptw.result,
 
 ```
 
-```{r iptwbootplot, dependson="iptwboot", echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+```{r iptwbootplot, dependson="iptwboot", echo=FALSE, fig.align = 'center', fig.width=4, fig.asp=0.618}
 theme_set(theme_gray(base_size = 10) +
             theme(panel.grid = element_blank(),
                   axis.ticks.y = element_blank(),
@@ -509,7 +510,7 @@ ate <- data.frame(X1 = EX1$.epred,
 
 The distribution of contrasts calculated in that final step are marginal estimates in that the two expectations $E[Y^{Z=z, X=1}]$ and $E[Y^{Z=z, X=0}]$ marginalize or average over the covariate(s) $Z$. We summarize the contrast by its posterior mean and 90% HPDI and plot the distribution against the bootstrapped IPTW, using the `tidybayes` package. Results are almost identical, although g-computation looks slightly more precise in this particular case.
 
-```{r standplot, dependson=c("iptwboot","standproc"), echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+```{r standplot, dependson=c("iptwboot","standproc"), echo=FALSE, fig.align = 'center', fig.width=4, fig.asp=0.618}
 theme_set(theme_gray(base_size = 10) +
             theme(panel.grid = element_blank()))
 
@@ -657,10 +658,9 @@ ateX_1 <- data.frame(X_11 = EX11$.epred,
 
 By breaking the procedure down into separate models -- one for each time point and treatment -- we by-pass the problem that a single regression runs into, namely that $Z_1$ is both a collider and a confounder. The resulting contrasts, stored in `ateX_0` and `ateX_1` and plotted below, are valid causal estimates of the joint effects of each treatment on the outcome (to the extent that the identification assumptions hold (we discuss these assumptions in the next section). 
 
-Recall that we simulated the joint effects as non-existing, so the contrasts should be around zero. They are not *exactly* centered on 0 due to sampling variability; we're only showing a single run of simulation and analysis here.
+Recall that we simulated the joint effects as non-existing, so the contrasts should be around zero. They are not *exactly* centered on zero due to sampling variability; we're only showing a single run of simulation and analysis here.
 
-
-```{r longstandplot, dependson=c("longstandt0proc","longstandt1proc"), echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+```{r longstandplot, dependson=c("longstandt0proc","longstandt1proc"), echo=FALSE, fig.align = 'center', fig.width=4, fig.asp=0.618}
 theme_set(theme_gray(base_size = 10) +
             theme(panel.grid = element_blank()))
 
@@ -721,7 +721,7 @@ The DAG could look something like figure \ref{dagvelux}.
     \label{dagvelux}
 \end{figure}
 ```
-$C$ is a set of baseline covariates comprising standard demographics, including age, gender, income and education; the indefinite arrows indicate confounding on all observed variables). Our exposure $R_{1-4}$ represent level of religiosity ("How important is religion to you?", measured on a 1 ("not at all important") to 4 ("very important") scale.) measured at four time points, and $H_{1-4}$ are subjective general health ("How would you describe your current health?", measured on a 1 ("very bad") to 5 ("very good") scale.), a set of time-varying covariates. Note the complex causal relationships across time between $R$ and $H$.
+$C$ is a set of baseline covariates comprising standard demographics, including age, gender, income and education; the indefinite arrows indicate confounding on all observed variables). Our exposure $R_{1-4}$ represent level of religiosity ("How important is religion to you?", measured on a 1 ("not at all important") to 4 ("very important") scale.) measured at four time points, and $H_{1-4}$ are subjective general health ("How would you describe your current health?", measured on a 1 ("very bad") to 5 ("very good") scale.). Note the complex causal relationships across time between $R$ and $H$.
 
 To provide some background, this dataset comes from a panel study on a pseudo-representative sample of Danes during the COVID-19 pandemic [for more detail, see @mauritsen_bendixen_christensen_2022]. As investigators, we are interested in assessing whether religiosity was a protective factor in terms of subjective general well-being in the context of the stress and uncertainty of a pandemic. If that was so, we'd expect a positive effect of religiosity on subjective health.
 
@@ -858,7 +858,7 @@ marginaleffects::avg_comparisons(r3mod,
 
 The objects `ateR1`, `ateR2` and `ateR3` store the posterior means and HPDIs of the joint effects of religiosity on subjective health. Inspect the plot below to see that the contrasts huddle mostly around zero, meaning that we find little evidence for the notion that religion on average works as a protective factor during the pandemic: At least in these (self-reported) data, more religious individuals were not more healthy. If anything, these data point to the opposite relationship, in that most of the joint posterior mass is negative. 
 
-```{r veluxstandplot, dependson="veluxprep", echo=FALSE, fig.align = 'center', fig.width=4, fig.height=2}
+```{r veluxstandplot, dependson="veluxprep", echo=FALSE, fig.align = 'center', fig.width=4, fig.asp=0.618}
 theme_set(theme_gray(base_size = 10) +
             theme(panel.grid = element_blank()))
 
@@ -875,15 +875,15 @@ data.frame(ATE = c(ateR1$ate, ateR2$ate, ateR3$ate),
 
 ```
 
-One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardisation in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation; non-default priors.
+One last comment, before we move on: In our estimation above, we silently cut some corners, for the sake of illustrating the basic principles of standardization in a context with time-varying confounders. There are some additional modeling complexities that we could (and perhaps should) incorporate: Monotonicity in predictors; ordinal (not gaussian) outcome; random intercepts for individuals; Bayesian imputation; non-default priors.
 
 In the next section, we discuss assumptions that are required for a causal interpretation of estimates obtained via standardization and IPTW.
 
 ## It's assumptions all the way down{#assumptions}
 
-Causal inference in an observational setting generally requires several key conditions for a causal interpretation of the main exposure [e.g. @hernan2020causal, ch. 13; @naimi2017introduction]. One way to think of this exercise is that when assumptions are (assumed) satisfied, an observational study will have emulated a randomized study.
+Causal inference in an observational setting generally requires several key conditions for a causal interpretation of the main exposure [e.g. @hernan2020causal, ch. 13; @naimi2017introduction; @westreich2019epidemiology, p. 74-75]. One way to think of this exercise is that when assumptions are (assumed) satisfied, an observational study will have emulated a randomized study.
 
-First, we assume that the potential outcomes under varying levels of exposure are independent from the observed outcomes (*conditional exchangeability*). In a perfectly randomized trial, this is the case since randomization ensures that the probability of treatment is independent of the outcome --- we say that the treatment and control groups are "exchangeable". However, in an observational setting, there can be countless factors that both influence exposure levels and the outcome. It's a main goal of a statistical model to adjust for these confounding factors, in order to obtain conditional exchangeability. For instance, as we've seen, a DAG is useful for guiding statistical adjustment. In essence, we aim to statistically block all backdoor paths that both influence our exposure M and outcome Y of interest.
+First, we assume that the potential outcomes under varying levels of exposure are independent from the observed outcomes (*conditional exchangeability*). In a perfectly randomized trial, this is the case since randomization ensures that the probability of treatment is independent of the outcome --- we say that the treatment and control groups are "exchangeable". However, in an observational setting, there can be countless factors that both influence exposure levels and the outcome. It's a main goal of a statistical model to adjust for these confounding factors, in order to obtain conditional exchangeability. For instance, as we've seen, a DAG is useful for guiding statistical adjustment. In essence, we aim to statistically block all backdoor paths that both influence our exposure $X$ and outcome $Y$ of interest.
 
 Second, and relatedly, we assume *no model misspecification*, which entails that our model is specified correctly (e.g., in terms of functional relationships, no omitted confounding variables, etc.). However, whether any given statistical model and adjustment sets are sufficient to ensure these conditions hold is generally not empirically testable.
 
@@ -891,11 +891,11 @@ Third, and similarly, we assume that our variables are *measured without error*,
 
 Fourth, we assume that an individual's observed outcome under a given exposure is equivalent to the potential outcome that would've been observed under that exposure (*counterfactual consistency*). In other words, in the context of our g-computation procedure, when we obtain expected values for participants setting $X = x$, we assume that we obtain the values that we in fact would've observed, if those participants had been observed under $X = x$.
 
-Fifth, we assume *positivity*, which implies that individuals have similar exposure levels within all confounder levels. While this is empirically unlikely to hold in particular (for instance, when we have several covariates, including continuous ones, several groups, etc.), lack of positivity can be ignored to the extent that we're willing to assume that estimates for the strata with zero observations can be extrapolated from the model fitted on the observed strata [@hernan2020causal, p. 162].
+Fifth, we assume *positivity*, which implies that individuals have similar exposure levels within all confounder levels. While this is empirically unlikely to hold in particular situation (for instance, when we have several covariates, including continuous ones, several groups, etc.), lack of positivity can be ignored to the extent that we're willing to assume that estimates for the strata with zero observations can be extrapolated from the model fitted on the observed strata [@hernan2020causal, p. 162].
 
-Sixth, we assume no-interference, such that the potential outcomes of an individual is assumed to be unaffected by the treatment assignment of other individuals (also known as "the stable unit treatment value assumption" (SUTVA)).
+Sixth, we assume no interference, such that the potential outcomes of an individual is assumed to be unaffected by the treatment assignment of other individuals (also known as "the stable unit treatment value assumption", SUTVA).
 
-Seventh, and more trivially, we assume temporal ordering of relevant variables, for instance such that exposures and mediating variables occur before an outcome.
+Seventh, and more trivially, we assume temporal ordering of relevant variables, such that exposures and mediating variables occur before an outcome.
 
 # Missing data
 Causal inference is fundamentally a missing data problem. All real-world analyses are marred by missingness one way or the other. In the most basic sense, this directly relates to what we above called the fundamental problem of causal inference: We're always missing the counter-factual, so we impute it through assumption-laden estimation or by finding an appropriate comparison group.
@@ -909,7 +909,7 @@ A comprehensive overview of data analysis in the presence of missing data is obv
 As touched upon just above, we'll distinguish between missingness relating to **external** validity (i.e., is our treatment effect estimate unbiased in the target population?) and **internal** validity (i.e., is our treatment effect estimate unbiased in the sample?) [@lesko2017generalizing]. 
 
 ## External validity
-Once again, DAGs can help structure our thinking. Say we're interested in estimating the effect of a health intervention on some outcome (Figure \ref{extdag}). Consider too that, even if we randomize the treatment assignment -- i.e., there's no arrows pointing into "Treatment" -- our sample might not reflect the target population that we're ultimately interested in. When it comes to external validity, we're interested in not only backdoor paths between the treatment and the outcome but also between the outcome and the sampling indicator ("Sampled" in Figure \ref{extdag}). Here, there is such a path, through "Health seeking". That is, if you're on the lookout for treatment of some ailment, you're probably more likely to both enroll in a health study and also have health conditions that are different from non-health seeking individuals [@westreich2019epidemiology, p. 208-209].
+Once again, DAGs can help structure our thinking. Say we're interested in estimating the effect of a health intervention on some outcome (Figure \ref{extdag}). Consider too that, even if we randomize the treatment assignment -- i.e., there are no arrows pointing into "Treatment" -- our sample might not reflect the target population that we're ultimately interested in. When it comes to external validity, we're interested in not only backdoor paths between the treatment and the outcome but also between the outcome and the sampling indicator ("Sampled" in Figure \ref{extdag}). Here, there is such a path, through "Health seeking". That is, if you're on the lookout for treatment of some ailment, you're probably more likely to both enroll in a health study and also have health conditions that are different from non-health seeking individuals [@westreich2019epidemiology, p. 208-209].
 
 We box the "Sampled" node to emphasize that we've conditioned on the sampled individuals. This is similar to how we condition on variables by statistical adjustment, only here the conditioning happens at the design or sampling stage. 
 
@@ -1175,7 +1175,7 @@ sample_ate <- data.frame(X1 = EX1$.epred,
   summarise(ate = mean(X0 - X1))
 ```
 
-```{r transportcompare, fig.align = 'center', fig.width=6, fig.height=3, fig.cap="Poststratification example."}
+```{r transportcompare, fig.align = 'center', fig.width=6, fig.asp=0.618, fig.cap="Poststratification example."}
 # Combine and compare the two sets of estimates with an indicator for poststratified
 poststratified_ate$ps <- "Poststratified"
 sample_ate$ps <- "Empirical"
@@ -1411,9 +1411,13 @@ data.frame(Effect = c("ATE (population average treatment effect)",
 
 ## Internal validity
 In the previous section, we focused on external validity. That is, what can we do about the fact that our sample will almost always only be a subset -- and often a *non-random* one -- of the population of interest. In other words, most of the data will be missing most of the time.
-We could term this *unit missingness* -- we're missing data on entire units (e.g., individuals). 
+We could term this **unit missingness** -- we're missing data on entire units (e.g., individuals). 
 
-But, above and beyond unit missingness, we'll also very often have missing values certain variables for even sampled units -- *variable missingness*. This kind of missingness is what most people think of as missing data. And it is indeed ubiquitous. But as with unit missingness, there are principled strategies for thinking about variable missingness that in turn can guide analysis. The key idea here too is that we aim for the missing values to be conditionally exchangeable with the observed values. For this purpose, we'll again use DAGs and missingness indicators to encode our assumptions about the data-generating process [@thoemmes2015graphical].  
+But, above and beyond unit missingness, we'll also very often have missing values in certain variables for even the sampled units -- **variable missingness**. This kind of missingness is what most people think of as missing data (e.g., NAs in a spreadsheet). And it is indeed ubiquitous. But as with unit missingness, there are principled strategies for thinking about variable missingness that in turn can guide analysis. The key idea here too is that we aim for the missing values to be conditionally exchangeable with the observed values, similarly to how we aimed to block confounding backdoor paths and backdoor paths to a sampling indicator. For this purpose, we'll again use DAGs and missingness indicators to encode our assumptions about the data-generating process [@thoemmes2015graphical].  
+
+NB: Distinguish btw. missingness in outcome, covariate, and exposure/treatment -- see Morris et al. 2022.
+
+Example data: Primates from Rethinking?
 
 ### Missing (completely) at random
 
