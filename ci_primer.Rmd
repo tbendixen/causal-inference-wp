@@ -274,9 +274,9 @@ All of this entails that we cannot in general treat all regression coefficients 
 This fundamental insight stands in contrast to common practice in many empirical sciences, where a table (often Table 2 of an empirical report) with all estimated regression coefficients is often presented -- implicitly or explicitly -- as direct causal effects. This is a very unfortunate habit as it potentially misleads the reader to interpret coefficients of the control variables causally. Accordingly, to raise awareness about the potential pitfalls of this malpractice, it has been given a name, the "Table 2 Fallacy" [@westreich2013table].
 
 ### 100,000 regressions do not make for a causal estimate
-Another critical take-home is that causes are not in the data. For instance, it's not possible from the data alone to distinguish between a pipe and a fork, because they have similar statistical implications: In both cases, $X$ and $Y$ are associated, unless we condition on $Z$. But, for any given theory, whether $Z$ is thought of as a mediator or a confounder is often very different.
+Another critical take-home is that causes are not in the data[^Recent developments in machine learning include algorithms for "causal discovery", which promise to be able to discover causal structures from data. While a fascinating topic in its own right, this family of algorithms generally require strong assumptions.]. For instance, it's not possible from the data alone to distinguish between a pipe and a fork, because they have similar statistical implications: In both cases, $X$ and $Y$ are associated, unless we condition on $Z$. But, for any given theory, whether $Z$ is thought of as a mediator or a confounder is often very different.
 
-Therefore it follows that a DAG cannot be built on the basis of any number of regressions alone. Regressions are prediction engines, so regression coefficients only have a valid causal interpretation to the extent that identification assumptions hold. Instead, regressions can be used to *test* the implications of a particular DAG or set of DAGs [for discussion of this point in the wild, see @bendixen2023letter; @purzycki_coding_2022]. All this means that, at least in the context of an observational study where randomization was not feasible, variable selection -- which variables to include in your adjustment set -- cannot be automated; it strictly requires prior knowledge and explicit causal assumptions [@hernan2020causal; @westreich2019epidemiology].
+Therefore it follows that a DAG cannot be built on the basis of any number of regressions alone. Regressions are prediction engines, so regression coefficients only have a valid causal interpretation to the extent that identification assumptions hold. Instead, regressions can be used to *test* the implications of a particular DAG or set of DAGs [for discussion of this point in the wild, see @bendixen2023letter; @purzycki_coding_2022]. All this means that, at least in the context of an observational study where randomization was not feasible, variable selection -- which variables to include in your adjustment set -- cannot be fully automated; it strictly requires prior knowledge and explicit causal assumptions [@hernan2020causal; @westreich2019epidemiology].
 
 ### Average people vs. people on average: Marginal and conditional effects
 The final take-home pertains to the difference between **marginal** and **conditional** estimates. Here's what I mean. 
@@ -307,7 +307,7 @@ model <- glm(Y ~ X * A,
 
 ```
 
-Now, check the regression coefficient for $X$ in the `model` output. It's around `r round(bX,1)`. But consider now what this means. Very briefly put, in multiple regression, a coefficient represent the association of a given predictor to the outcome, when all other predictors are held at 0. The regression coefficient for $X$ represents therefore the effect of the intervention, *when age is held at 0*, that is at the average age. This is the **conditional** estimate: the intervention effect for an average-aged individual.
+Now, check the regression coefficient for $X$ in the `model` output. It's around `r round(bX,1)`. But consider now what this means. Very briefly put, in multiple regression, a coefficient represents the association of a given predictor to the outcome, when all other predictors are held at 0. The regression coefficient for $X$ represents therefore the effect of the intervention, *when age is held at 0*, that is at the average age (since we simulated a centered age variable). This is the **conditional** estimate: the intervention effect for an average-aged individual.
 
 However, often we wouldn't be interested in this quantity, the effect of an intervention at a very particular level of a covariate (a particular year of age, in this case). Perhaps we're interested in the effect of the intervention across a range of covariate values, but the regression coefficient for $X$ is still not directly getting us there. For instance, we could get predictions for the intervention's effect for up to $\pm2$ standard deviations of the mean age like so:
 
@@ -346,7 +346,7 @@ One such family of tools is known as **g-methods** -- *g* for *general* or *gene
 
 We focus primarily on standardization for a few reasons. First, since we want to perform our more real-world data analysis in a Bayesian framework, standardization is an obvious choice since the IPT weights are not obviously compatible with Bayes theorem [for some discussion see @robins2015bayesian; @saarela2015bayesian].
 
-Second, compared to IPTW, standardization and its practical implementation seem to be often overlooked in popular text books and primers on causal inference and econometrics in the social and health sciences [e.g., @morgan2015counterfactuals; @pearl2016causal; @westreich2019epidemiology; @angrist2009mostly; @mcelreath_statistical_2020], although the latter stresses contrasts. It is discussed in [@hernan2020causal, ch. 13] but there's no explicit, reproducible practical/programming application, though there's a g-methods package. IPTW also does not handle interaction terms between a predictor and the outcome. 
+Second, compared to IPTW, standardization and its practical implementation seem to be often overlooked in popular text books and primers on causal inference and econometrics in the social and health sciences [e.g., @morgan2015counterfactuals; @pearl2016causal; @westreich2019epidemiology; @angrist2009mostly; @mcelreath_statistical_2020], although the latter stresses contrasts. It is discussed in [@hernan2020causal, ch. 13], whcih is accompanied by practical notebooks on programming applications in a frequentist setting. There's also a g-methods package.
 
 However, given its popularity, it's useful to at least be aware of the nuts and bolts of IPTW, too. So let's briefly present the two methods in turn.
 
@@ -891,9 +891,9 @@ Third, and similarly, we assume that our variables are *measured without error*,
 
 Fourth, we assume that an individual's observed outcome under a given exposure is equivalent to the potential outcome that would've been observed under that exposure (*counterfactual consistency*). In other words, in the context of our g-computation procedure, when we obtain expected values for participants setting $X = x$, we assume that we obtain the values that we in fact would've observed, if those participants had been observed under $X = x$.
 
-Fifth, we assume *positivity*, which implies that individuals have similar exposure levels within all confounder levels. While this is empirically unlikely to hold in particular situation (for instance, when we have several covariates, including continuous ones, several groups, etc.), lack of positivity can be ignored to the extent that we're willing to assume that estimates for the strata with zero observations can be extrapolated from the model fitted on the observed strata [@hernan2020causal, p. 162].
+Fifth, we assume *positivity*, which implies that all covariate strata have a non-zero probability of the exposure. While this is empirically unlikely to hold in particular situations (for instance, when we have many covariates, including continuous ones, several groups, etc.), lack of positivity can be ignored to the extent that we're willing to assume that estimates for the strata with zero observations can be extrapolated from the model fitted on the observed strata [@hernan2020causal, p. 162].
 
-Sixth, we assume no interference, such that the potential outcomes of an individual is assumed to be unaffected by the treatment assignment of other individuals (also known as "the stable unit treatment value assumption", SUTVA).
+Sixth, we assume no interference, such that the potential outcomes of an individual is assumed to be unaffected by the treatment assignment of other individuals (closely realted to "the stable unit treatment value assumption", SUTVA).
 
 Seventh, and more trivially, we assume temporal ordering of relevant variables, such that exposures and mediating variables occur before an outcome.
 
@@ -1415,16 +1415,12 @@ We could term this **unit missingness** -- we're missing data on entire units (e
 
 But, above and beyond unit missingness, we'll also very often have missing values in certain variables for even the sampled units -- **variable missingness**. This kind of missingness is what most people think of as missing data (e.g., NAs in a spreadsheet). And it is indeed ubiquitous. But as with unit missingness, there are principled strategies for thinking about variable missingness that in turn can guide analysis. The key idea here too is that we aim for the missing values to be conditionally exchangeable with the observed values, similarly to how we aimed to block confounding backdoor paths and backdoor paths to a sampling indicator. For this purpose, we'll again use DAGs and missingness indicators to encode our assumptions about the data-generating process [@thoemmes2015graphical].  
 
-NB: Distinguish btw. missingness in outcome, covariate, and exposure/treatment -- see Morris et al. 2022.
-
-Example data: Primates from Rethinking?
-
 ### Missing (completely) at random
 
 ### Missing not at random
 
 \newpage
-
+<!--
 # To do:
 
 - Plot results in a simple style
